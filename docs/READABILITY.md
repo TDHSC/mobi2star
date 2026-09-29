@@ -35,7 +35,7 @@ Input that already contains the profile's wrappers is rejected instead of being 
 
 `Plan::build` applies the same edits and the same `readable.css` to three outputs: StarDict entries, full chapters and the offline browser viewer.
 
-In the StarDict output the CSS appears in two places. It is embedded in each entry, and it is also written as `StarDict/dictionary.css`, because KOReader loads the CSS file that shares the `.ifo` base name.
+In the StarDict output the CSS is always written as `StarDict/dictionary.css`, the file KOReader loads. How each entry references it depends on `convert --reader`: a hidden link to `res/dictionary.css`, an inline copy, or both (see [READERS.md](READERS.md)). The profile's CSS is one style set, so every output uses exactly the same rules.
 
 The stylesheet is tuned for narrow screens and large fonts:
 

@@ -43,11 +43,25 @@ The offline browser generator emits local HTML/CSS/JavaScript and lookup records
 
 The `compiled` writer is now a thin adapter to these same primitives. The standalone StarDict reader parses the emitted files separately and checks ordering, counts, ordinals and physical coverage.
 
+## Stylesheet delivery
+
+Readers load a dictionary stylesheet in different ways (see [READERS.md](READERS.md)). One concept lives in each layer:
+
+- `lexicon_core::TargetReader` names the reader, and `style_delivery()` maps it to a `StyleDelivery { link, inline }`. `STYLESHEET_FILE` and `LINK_TAG` are the shared names.
+- Each renderer produces one dictionary-wide stylesheet and the per-payload references:
+  - `srcs_render::Plan` groups pages by their ordered stylesheet list. Each `StyleSet` is scoped under its own wrapper class, so every set can share one file without changing any page's cascade. `Plan::stylesheet()` joins the sets; `Plan::style_prefix()` writes a payload's link and/or inline copy.
+  - `html_preserve::stylesheet()` joins the source `<style>` bodies. `render_fragment()` adds the link, and copies the `<style>` elements only for inline delivery. Style bodies that cannot be joined safely are errors: unbalanced CSS, print-only media, or elements split by an entry boundary.
+- `stardict_io::stylesheet_files()` owns the file layout: `dictionary.css` next to the `.ifo` always, and `res/dictionary.css` when payloads link to it.
+
+The reader is chosen at render time, so `Audit/render-plan.json`, `edits.json` and the offline viewer do not depend on it.
+
 ## Publication and verification
 
 `Transaction` exclusively creates a new owner-only output directory. Source conversion writes into its private staging child, reads the actual dictionary back, then runs `verify_source`. That verifier checks exact file membership and hashes, binds the supplied original when present, parses the actual StarDict files, rebuilds the full deterministic bundle from the archived source into a temporary directory, and compares the two inventories. A successful check allows publication as `OUTPUT/bundle`.
 
 Rebuild verification is intentionally version-specific and reuses the producer's parser/renderer. It detects altered or missing artifacts even when their checksums have been rewritten, while common-mode implementation bugs remain possible. This is why the suite also contains source/compiled comparisons and synthetic adversarial fixtures, and why the report keeps a distinct rendering status.
+
+`mobi2star::OutputOptions` carries every choice that changes bundle bytes: offset width, label language and target reader. Both manifests record these choices, and verification replays or regenerates with them. `manifest::check_header` reads the version before strict parsing, so a bundle from another mobi2star version gets a clear error. Verification dispatches on the manifest's `backend`.
 
 Text that mobi2star generates itself comes from `lexicon_core::LabelLanguage`. That covers lookup keys for uncovered compiled text, chapters and image galleries, plus the offline viewer UI. Both manifests record the language, and verification regenerates with the recorded value. Changing the recorded language therefore fails verification instead of silently producing different keys. Source text is never translated.
 
@@ -76,12 +90,12 @@ fn convert_book(input: &Path, output: &Path) -> lexicon_core::Result<()> {
 }
 ```
 
-`OutputOptions` groups every choice that changes bundle bytes (offset width and label language); conversions take it instead of separate parameters, and manifests record its values for verification. `convert` / `verify` remain the original typed compiled-adapter APIs. `convert_source` / `verify_source` expose the new typed source report. `convert_with_backend` / `verify_bundle` provide typed unified dispatch.
+`OutputOptions` groups every choice that changes bundle bytes (offset width, label language, target reader); conversions take it instead of separate parameters, and manifests record its values for verification. `convert` / `verify` remain the original typed compiled-adapter APIs. `convert_source` / `verify_source` expose the new typed source report. `convert_with_backend` / `verify_bundle` provide typed unified dispatch.
 
 
 ## Readability adapter
 
-`readability::applies` checks publisher metadata plus stylesheet signatures. `readability::edits` returns source-byte edits and typed counts; it shares the existing tokenizer, checked spans, replay engine and transaction/verification pipeline. The profile contains a single CSS asset embedded with `include_str!`; the bundle writer writes identical bytes as `dictionary.css`. Unknown books follow the original source-scoping route.
+`readability::applies` checks publisher metadata plus stylesheet signatures. `readability::edits` returns source-byte edits and typed counts; it shares the existing tokenizer, checked spans, replay engine and transaction/verification pipeline. The profile contains a single CSS asset embedded with `include_str!`. It forms the plan's only style set, so the bundle writer writes identical bytes as `dictionary.css`. Unknown books follow the original source-scoping route.
 
 Layout wrappers operate on sibling ranges, with nested entries and tables as barriers. A source `br` at an existing structural break is represented by an inert span retaining its attributes; source archive and edit provenance reconstruct the original. Labels, punctuation, IPA, examples and lookup ownership remain source facts. The profile uses native HTML block tags to retain paragraph structure when an engine ignores styles inside article bodies.
 

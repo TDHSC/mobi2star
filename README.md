@@ -77,14 +77,30 @@ Every command accepts `--json` for machine-readable output (errors go to stderr)
   - This covers lookup keys for chapters, image galleries and text outside any headword (such as `[Chapter 000001] Preface` or `[Supplement 000001]`), plus the offline viewer's interface.
   - Dictionary content is never translated.
   - The choice is recorded in `manifest.json`, so `verify` needs no extra option.
+- `--reader` sets the reader the dictionary is built for, which decides how entries reference the stylesheet. See [Choosing a reader](#choosing-a-reader).
 
 The output directory must not exist yet. `convert` creates it with owner-only permissions (`0700`) and publishes `OUTPUT/bundle` only after every check passes. If any check fails, the staging tree is removed and existing files are left untouched.
 
 Verification rebuilds the full bundle in the system temporary directory (set `TMPDIR` to move it), so reserve free space for about twice the bundle size. The default bundle budget is 8 GiB.
 
+### Choosing a reader
+
+Readers load a dictionary's stylesheet in different ways, so `convert --reader` tailors the output. `dictionary.css` next to the `.ifo` is always written.
+
+| `--reader` | Use it for | What each entry carries |
+|---|---|---|
+| `koreader` (default) | KOReader; also works for GoldenDict desktop | a hidden `<link>` to `res/dictionary.css` |
+| `goldendict` | GoldenDict and GoldenDict-ng on desktop | same as `koreader` |
+| `goldendict-mobile` | GoldenDict Mobile on Android | its own `<style>` copy |
+| `readest` | Readest | its own `<style>` copy |
+| `kobo` | converting to a Kobo dictionary with PyGlossary or penelope | its own `<style>` copy |
+| `universal` | one folder shared by several readers, or a reader not listed here (e.g. Boox) | both |
+
+Inline copies make the dictionary roughly twice as large; for Collins COBUILD the `.dict` is 146 MB with `koreader` and 305 MB with `readest`. [docs/READERS.md](docs/READERS.md) records how each reader was assessed and how confident that assessment is.
+
 ### Importing into a reader
 
-Copy the whole `StarDict/` directory into your reader's dictionary folder, including `dictionary.css` and `res/`. KOReader loads the CSS file that shares the `.ifo` base name. `Browser/index.html` can be opened directly in a web browser.
+Copy the whole `StarDict/` directory into your reader's dictionary folder, including `dictionary.css` and `res/`. `Browser/index.html` can be opened directly in a web browser.
 
 ## Output layout
 
@@ -97,8 +113,9 @@ bundle/
 │   ├── dictionary.idx
 │   ├── dictionary.dict
 │   ├── dictionary.syn
-│   ├── dictionary.css
+│   ├── dictionary.css   # loaded by KOReader
 │   └── res/
+│       ├── dictionary.css  # linked from entries (not written for inline-only readers)
 │       ├── source/      # images from the publisher source
 │       └── compiled/    # images from the compiled MOBI
 ├── Browser/             # static offline viewer
@@ -115,7 +132,7 @@ bundle/
 └── report.json
 ```
 
-The `compiled` backend writes a flat bundle: the `dictionary.*` files at the bundle root, plus `archive/`, `manifest.json` and `report.json`. `lookup` and `verify` recognize both layouts.
+The `compiled` backend writes a flat bundle: the `dictionary.*` files (including `dictionary.css`) and `res/` at the bundle root, plus `archive/`, `manifest.json` and `report.json`. `lookup` and `verify` recognize both layouts.
 
 ## What is checked
 
@@ -165,7 +182,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SECURITY.md](docs/SEC
 | `stardict-io` | Streaming StarDict writer shared by both backends, plus an independent reader |
 | `mobi2star` | CLI, backend selection, staged publication, source binding and end-to-end verification |
 
-Further reading: [docs/TESTING.md](docs/TESTING.md) and [docs/SOURCES.md](docs/SOURCES.md).
+Further reading: [docs/READERS.md](docs/READERS.md), [docs/TESTING.md](docs/TESTING.md) and [docs/SOURCES.md](docs/SOURCES.md).
 
 ## Dictionary content and trademarks
 

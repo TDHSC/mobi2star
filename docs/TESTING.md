@@ -30,6 +30,7 @@ All fixtures are original and synthetic. The repository contains no third-party 
   - that encrypted input and broken resource references are hard errors;
   - 64-bit indexes;
   - truncated and mutated inputs, which must fail without panicking.
+- **Reader matrix** (both end-to-end files): every `--reader` value is converted and checked for the link and inline references it should carry, the exact stylesheet files, a passing `verify`, and an unchanged offline viewer and render plan. Editing the recorded reader, rewriting a stylesheet, or verifying a bundle from another version must fail.
 - **Decode goldens** (`crates/mobi2star/tests/decode_golden.rs`) check that each MOBI fixture decodes exactly to its `tests/fixtures/*.expected.json`: compression type, decompressed text, every entry's byte range and aliases, the image hash and internal link targets.
 - **SRCS end-to-end tests** (`crates/mobi2star/tests/srcs_end_to_end.rs`) build MOBI files with an embedded source ZIP inside the test itself. The source ZIP holds XHTML, OPF, CSS and a PNG. These tests cover:
   - conversion and auto backend selection;

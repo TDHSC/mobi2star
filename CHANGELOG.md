@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- New `convert --reader koreader|goldendict|goldendict-mobile|readest|kobo|universal`, default `koreader`. It decides how entries reference the stylesheet: a hidden link to `res/dictionary.css`, an inline `<style>` copy, or both. The default drops the inline copies, which KOReader never applied: the Collins COBUILD `.dict` shrinks from 305 MB to 146 MB, and KOReader renders it identically. See docs/READERS.md.
+- `dictionary.css` is now written for every book and both backends. Books without the Collins profile, and all compiled-backend books, used to show no publisher styles in KOReader.
+- SRCS pages that link different stylesheets are scoped per stylesheet set, so one shared stylesheet file keeps each page's cascade.
+- The compiled backend rejects `<style>` elements that cannot join a shared stylesheet: unbalanced CSS, media other than all/screen, other attributes, or elements split by an entry boundary.
+- Bundle manifests record the reader (and, for the compiled backend, the offset width); schemas are compiled 2 and SRCS 3. Verification of a bundle from another mobi2star version reports which version produced it.
+- Library: conversion functions take `OutputOptions { offset_bits, labels, reader }`.
+
 ## 0.3.0-alpha.2 — Collins readability profile fix
 
 - Fixed: the Collins COBUILD readability profile never applied to the retail Kindle edition, whose OPF title is "COBUILD Advanced Learner's Dictionary" without "Collins". Those conversions fell back to the source-scoped layout.
