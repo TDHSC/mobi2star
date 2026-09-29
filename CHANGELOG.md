@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.0-alpha.1 — Reader-targeted stylesheets
 
+- Alpha: reader behavior was established from source code and a MuPDF render comparison, not on devices; docs/READERS.md gives the confidence for each reader. Bundles from 0.3 must be verified with 0.3 or reconverted.
 - New `convert --reader koreader|goldendict|goldendict-mobile|readest|kobo|universal`, default `koreader`. It decides how entries reference the stylesheet: a hidden link to `res/dictionary.css`, an inline `<style>` copy, or both. The default drops the inline copies, which KOReader never applied: the Collins COBUILD `.dict` shrinks from 305 MB to 146 MB, and KOReader renders it identically. See docs/READERS.md.
 - `dictionary.css` is now written for every book and both backends. Books without the Collins profile, and all compiled-backend books, used to show no publisher styles in KOReader.
 - SRCS pages that link different stylesheets are scoped per stylesheet set, so one shared stylesheet file keeps each page's cascade.
