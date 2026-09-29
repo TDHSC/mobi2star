@@ -5,9 +5,11 @@
 pub mod bytes;
 pub mod labels;
 pub mod model;
+pub mod output;
 pub mod safety;
 pub use labels::*;
 pub use model::*;
+pub use output::*;
 pub use safety::*;
 
 use thiserror::Error;

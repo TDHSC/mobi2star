@@ -3,7 +3,7 @@
 pub mod browser;
 pub mod css;
 pub mod readability;
-use lexicon_core::{Error, Result, Span};
+use lexicon_core::{Error, Result, Span, StyleDelivery, LINK_TAG};
 use serde::{Deserialize, Serialize};
 use srcs_reader::{uri, Definition, Page, SourceBook, Target};
 use std::collections::{BTreeMap, BTreeSet};
@@ -26,7 +26,17 @@ pub struct PagePlan {
     pub layout_counts: readability::Counts,
     pub stardict: Vec<Edit>,
     pub browser: Vec<Edit>,
-    pub scoped_css: String,
+    /// Index into [`Plan::style_sets`].
+    pub style_set: usize,
+}
+/// CSS shared by every page with the same ordered stylesheet list, scoped
+/// under `class`, which is also the class of those pages' payload wrappers.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StyleSet {
+    /// Source stylesheets in page order; empty for a layout profile's CSS.
+    pub stylesheets: Vec<String>,
+    pub class: String,
+    pub css: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Plan {
@@ -35,6 +45,7 @@ pub struct Plan {
     pub scope: String,
     pub page_ids: BTreeMap<String, usize>,
     pub pages: BTreeMap<String, PagePlan>,
+    pub style_sets: Vec<StyleSet>,
     pub links: Vec<ResolvedLink>,
 }
 #[derive(Debug)]
@@ -62,6 +73,43 @@ pub fn browser_path(file: &str) -> String {
 }
 pub fn browser_anchor(id: usize) -> String {
     format!("m2s-entry-{id}")
+}
+/// Groups pages by their ordered stylesheet list. The first list keeps the
+/// book scope as its class, so books with one list render exactly as before;
+/// later lists get `{scope}-s{n}`. A set's selectors only match wrappers that
+/// carry its class, so all sets can share one stylesheet file without
+/// changing any page's cascade.
+fn style_sets<'a>(
+    scope: &str,
+    pages: &[&[String]],
+    text: impl Fn(&str) -> Result<&'a str>,
+) -> Result<(Vec<StyleSet>, Vec<usize>)> {
+    let mut sets: Vec<StyleSet> = Vec::new();
+    let mut assigned = Vec::with_capacity(pages.len());
+    for &stylesheets in pages {
+        let index = match sets.iter().position(|s| s.stylesheets == stylesheets) {
+            Some(index) => index,
+            None => {
+                let class = if sets.is_empty() {
+                    scope.to_owned()
+                } else {
+                    format!("{scope}-s{}", sets.len())
+                };
+                let mut css_text = String::new();
+                for file in stylesheets {
+                    css_text.push_str(&css::scope(text(file)?, &class)?);
+                }
+                sets.push(StyleSet {
+                    stylesheets: stylesheets.to_vec(),
+                    class,
+                    css: css_text,
+                });
+                sets.len() - 1
+            }
+        };
+        assigned.push(index);
+    }
+    Ok((sets, assigned))
 }
 impl Plan {
     pub fn build(book: &SourceBook, namespace: &str) -> Result<Self> {
@@ -92,7 +140,27 @@ impl Plan {
                 .map(|(i, n)| (n.clone(), i))
                 .collect(),
             pages: BTreeMap::new(),
+            style_sets: Vec::new(),
             links: Vec::new(),
+        };
+        let page_sets = if readable {
+            out.style_sets.push(StyleSet {
+                stylesheets: Vec::new(),
+                class: out.scope.clone(),
+                css: readability::CSS.into(),
+            });
+            vec![0; book.pages.len()]
+        } else {
+            let lists: Vec<&[String]> = book
+                .pages
+                .values()
+                .map(|p| p.stylesheets.as_slice())
+                .collect();
+            let (sets, assigned) = style_sets(&out.scope, &lists, |file| {
+                srcs_reader::markup::utf8(&book.files[file])
+            })?;
+            out.style_sets = sets;
+            assigned
         };
         let source_keys: BTreeSet<&str> = book
             .orths
@@ -126,15 +194,14 @@ impl Plan {
                 return Err(Error::Incomplete("browser output path collision".into()));
             }
         }
-        for page in book.pages.values() {
+        for (page, &style_set) in book.pages.values().zip(&page_sets) {
             let mut plan = PagePlan {
                 layout_counts: readability::Counts::default(),
                 stardict: Vec::new(),
                 browser: Vec::new(),
-                scoped_css: String::new(),
+                style_set,
             };
             if readable {
-                plan.scoped_css = readability::CSS.into();
                 let (layout, counts) = readability::edits(&book.files[&page.file], false)?;
                 plan.stardict.extend(layout.clone());
                 plan.browser.extend(layout);
@@ -166,11 +233,6 @@ impl Plan {
                     replacement: format!("<style>{}</style>", readability::CSS),
                     reason: "reader_portable_css".into(),
                 });
-            } else {
-                for style in &page.stylesheets {
-                    let text = srcs_reader::markup::utf8(&book.files[style])?;
-                    plan.scoped_css.push_str(&css::scope(text, &out.scope)?);
-                }
             }
             for link in &page.links {
                 let Some(target) = &link.target else { continue };
@@ -267,11 +329,54 @@ impl Plan {
         }
         Ok(out)
     }
-    pub fn definition(&self, book: &SourceBook, entry: &Definition) -> Result<Rendered> {
-        self.render(book, &book.pages[&entry.file], entry.span, &entry.ancestors)
+    pub fn definition(
+        &self,
+        book: &SourceBook,
+        entry: &Definition,
+        style: StyleDelivery,
+    ) -> Result<Rendered> {
+        self.render(
+            book,
+            &book.pages[&entry.file],
+            entry.span,
+            &entry.ancestors,
+            style,
+        )
     }
-    pub fn chapter(&self, book: &SourceBook, page: &Page) -> Result<Rendered> {
-        self.render(book, page, page.body, &[])
+    pub fn chapter(
+        &self,
+        book: &SourceBook,
+        page: &Page,
+        style: StyleDelivery,
+    ) -> Result<Rendered> {
+        self.render(book, page, page.body, &[], style)
+    }
+    /// The dictionary-wide stylesheet: every style set's CSS, in set order.
+    pub fn stylesheet(&self) -> String {
+        self.style_sets.iter().map(|set| set.css.as_str()).collect()
+    }
+    /// Style set of generated pages (image galleries), present when a layout
+    /// profile styles the whole book.
+    pub fn profile_style_set(&self) -> Option<usize> {
+        (self.layout_profile == readability::PROFILE).then_some(0)
+    }
+    /// Stylesheet references a payload using style set `set` starts with.
+    /// A set without CSS needs none.
+    pub fn style_prefix(&self, set: usize, style: StyleDelivery) -> String {
+        let css = &self.style_sets[set].css;
+        let mut out = String::new();
+        if css.is_empty() {
+            return out;
+        }
+        if style.link {
+            out.push_str(LINK_TAG);
+        }
+        if style.inline {
+            out.push_str("<style>");
+            out.push_str(css);
+            out.push_str("</style>");
+        }
+        out
     }
     fn render(
         &self,
@@ -279,19 +384,21 @@ impl Plan {
         page: &Page,
         span: Span,
         ancestors: &[srcs_reader::Ancestor],
+        style: StyleDelivery,
     ) -> Result<Rendered> {
         let raw = &book.files[&page.file];
         let plan = &self.pages[&page.file];
         let body =
             srcs_reader::markup::utf8(page.body_tag.bytes(raw)?)?.replacen("<body", "<div", 1);
+        let set = &self.style_sets[plan.style_set];
+        let class = if self.layout_profile == readability::PROFILE {
+            format!("{} m2s-readable", set.class)
+        } else {
+            set.class.clone()
+        };
         let mut prefix = format!(
-            "<style>{}</style><div class=\"{}\">{body}",
-            plan.scoped_css,
-            if self.layout_profile == readability::PROFILE {
-                format!("{} m2s-readable", self.scope)
-            } else {
-                self.scope.clone()
-            }
+            "{}<div class=\"{class}\">{body}",
+            self.style_prefix(plan.style_set, style)
         )
         .into_bytes();
         for ancestor in ancestors {
@@ -373,6 +480,81 @@ mod tests {
         }];
         assert!(replay(b"abcdef", &e, Span { start: 2, end: 6 }).is_err());
         assert!(replay(b"abcdef", &e, Span { start: 0, end: 3 }).is_err());
+    }
+    #[test]
+    fn pages_are_grouped_by_ordered_stylesheet_list() {
+        let files: BTreeMap<&str, &str> = [
+            ("a.css", "p { color: red }"),
+            ("b.css", "p { color: blue }"),
+        ]
+        .into();
+        let lists: Vec<Vec<String>> = vec![
+            vec!["a.css".into()],
+            vec!["a.css".into()],
+            vec!["b.css".into(), "a.css".into()],
+            vec![],
+            vec!["a.css".into(), "b.css".into()],
+        ];
+        let pages: Vec<&[String]> = lists.iter().map(Vec::as_slice).collect();
+        let (sets, assigned) = style_sets("m2s_x", &pages, |f| Ok(files[f])).unwrap();
+        assert_eq!(assigned, [0, 0, 1, 2, 3]);
+        // The first list keeps the book scope; later lists get their own class.
+        let classes: Vec<&str> = sets.iter().map(|s| s.class.as_str()).collect();
+        assert_eq!(classes, ["m2s_x", "m2s_x-s1", "m2s_x-s2", "m2s_x-s3"]);
+        assert!(sets[0].css.contains(".m2s_x p") && !sets[0].css.contains("-s"));
+        // Each set is scoped only under its own class, in its own file order.
+        let s1 = &sets[1].css;
+        assert!(!s1.contains(".m2s_x p") && s1.find("blue").unwrap() < s1.find("red").unwrap());
+        assert!(sets[2].css.is_empty());
+        let s3 = &sets[3].css;
+        assert!(s3.find("red").unwrap() < s3.find("blue").unwrap());
+    }
+    #[test]
+    fn style_prefix_follows_the_delivery() {
+        let plan = Plan {
+            layout_profile: "source".into(),
+            namespace: "0".repeat(64),
+            scope: "m2s_x".into(),
+            page_ids: BTreeMap::new(),
+            pages: BTreeMap::new(),
+            style_sets: vec![
+                StyleSet {
+                    stylesheets: vec!["a.css".into()],
+                    class: "m2s_x".into(),
+                    css: ".m2s_x p{}".into(),
+                },
+                StyleSet {
+                    stylesheets: vec![],
+                    class: "m2s_x-s1".into(),
+                    css: String::new(),
+                },
+            ],
+            links: Vec::new(),
+        };
+        let both = StyleDelivery {
+            link: true,
+            inline: true,
+        };
+        let link = StyleDelivery {
+            link: true,
+            inline: false,
+        };
+        assert_eq!(
+            plan.style_prefix(0, StyleDelivery::INLINE),
+            "<style>.m2s_x p{}</style>"
+        );
+        assert_eq!(plan.style_prefix(0, link), LINK_TAG);
+        assert_eq!(
+            plan.style_prefix(0, both),
+            format!("{LINK_TAG}<style>.m2s_x p{{}}</style>")
+        );
+        assert_eq!(
+            plan.style_prefix(1, both),
+            "",
+            "a set without CSS needs no reference"
+        );
+        assert_eq!(plan.stylesheet(), ".m2s_x p{}");
+        assert_eq!(plan.profile_style_set(), None);
     }
     #[test]
     fn escaping_and_namespace() {

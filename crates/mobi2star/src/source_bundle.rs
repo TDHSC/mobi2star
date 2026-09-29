@@ -7,6 +7,7 @@ use crate::{
 };
 use lexicon_core::{
     checked_member, hash_file, read_bounded, sha256, Error, LabelLanguage, Limits, Result, Span,
+    StyleDelivery,
 };
 use mobi_reader::Container;
 use serde::{Deserialize, Serialize};
@@ -194,6 +195,8 @@ fn build(
         labels,
     } = options;
     let text = labels.text();
+    // Every payload still carries its own stylesheet copy.
+    let style = StyleDelivery::INLINE;
     let mobi = Container::open(source, limits)?;
     let (src_record, archive) = mobi
         .source_archive()?
@@ -300,7 +303,7 @@ fn build(
     let mut items = Vec::new();
     let mut aliases = Vec::new();
     for entry in &book.entries {
-        let rendered = plan.definition(&book, entry)?;
+        let rendered = plan.definition(&book, entry, style)?;
         let payload = writer.append(&rendered.bytes)?;
         articles.push(article_audit(
             "definition",
@@ -368,7 +371,7 @@ fn build(
 
     for (file, &id) in &plan.page_ids {
         let page = &book.pages[file];
-        let rendered = plan.chapter(&book, page)?;
+        let rendered = plan.chapter(&book, page, style)?;
         let payload = writer.append(&rendered.bytes)?;
         articles.push(article_audit(
             "chapter",
@@ -409,17 +412,18 @@ fn build(
             ));
         }
         let original_gallery = gallery(title, images);
-        let rendered_gallery = if plan.layout_profile == srcs_render::readability::PROFILE {
-            let mut html = format!(
-                "<style>{}</style><div class=\"m2s-readable\">",
-                srcs_render::readability::CSS
-            )
-            .into_bytes();
-            html.extend_from_slice(&original_gallery);
-            html.extend_from_slice(b"</div>");
-            html
-        } else {
-            original_gallery
+        let rendered_gallery = match plan.profile_style_set() {
+            Some(set) => {
+                let mut html = format!(
+                    "{}<div class=\"m2s-readable\">",
+                    plan.style_prefix(set, style)
+                )
+                .into_bytes();
+                html.extend_from_slice(&original_gallery);
+                html.extend_from_slice(b"</div>");
+                html
+            }
+            None => original_gallery,
         };
         let payload = writer.append(&rendered_gallery)?;
         items.push(CatalogItem {
