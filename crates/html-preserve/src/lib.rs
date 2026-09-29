@@ -7,7 +7,7 @@ use std::{
     cmp::Reverse,
     collections::{BTreeMap, BTreeSet, BinaryHeap},
 };
-use tokenizer::{Attribute, Token, Tokenizer};
+use tokenizer::{Attribute, Tag, Token, Tokenizer};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Edit {
@@ -28,12 +28,19 @@ pub struct ResourceLink {
     pub recindex: u32,
     pub filename: String,
 }
+/// A source `<style>` element. Inline payloads copy `element` verbatim; the
+/// dictionary stylesheet file takes the `css` body.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StyleBlock {
+    pub element: Span,
+    pub css: Span,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct Plan {
     pub edits: Vec<Edit>,
     pub links: Vec<InternalLink>,
     pub resource_links: Vec<ResourceLink>,
-    pub styles: Vec<Span>,
+    pub styles: Vec<StyleBlock>,
     pub external_links: usize,
 }
 #[derive(Clone)]
@@ -117,6 +124,78 @@ fn check_css(text: &str) -> Result<()> {
     }
     Ok(())
 }
+/// Style bodies are joined into one stylesheet file, where an unclosed block,
+/// comment or string would swallow the next body. Separate `<style>` elements
+/// used to contain that, so the joined form requires each body to be closed.
+/// Backslash escapes are already rejected by `check_css`.
+fn check_balanced(css: &str) -> Result<()> {
+    let bytes = css.as_bytes();
+    let unbalanced = || {
+        Error::Unsupported("unbalanced CSS in <style>; cannot join into a stylesheet file".into())
+    };
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                let end = css[i + 2..].find("*/").ok_or_else(unbalanced)?;
+                i += end + 4;
+                continue;
+            }
+            quote @ (b'"' | b'\'') => {
+                let end = bytes[i + 1..]
+                    .iter()
+                    .position(|&c| c == quote || c == b'\n')
+                    .ok_or_else(unbalanced)?;
+                if bytes[i + 1 + end] != quote {
+                    return Err(unbalanced());
+                }
+                i += end + 2;
+                continue;
+            }
+            b'{' => depth += 1,
+            b'}' => depth = depth.checked_sub(1).ok_or_else(unbalanced)?,
+            _ => {}
+        }
+        i += 1;
+    }
+    if depth == 0 {
+        Ok(())
+    } else {
+        Err(unbalanced())
+    }
+}
+/// Only attributes whose meaning survives moving the body into a shared
+/// stylesheet file: a CSS `type`, and a `media` that applies on screen.
+fn check_style_element(tag: &Tag, raw: &[u8], encoding: Encoding) -> Result<()> {
+    for attr in &tag.attrs {
+        let value = attr_value(attr, raw, encoding)?.trim().to_ascii_lowercase();
+        let supported = match attr.name.as_str() {
+            "type" => value == "text/css",
+            "media" => value == "all" || value == "screen",
+            _ => false,
+        };
+        if !supported {
+            return Err(Error::Unsupported(format!(
+                "<style {}=\"{value}\"> needs a stylesheet adapter",
+                attr.name
+            )));
+        }
+    }
+    Ok(())
+}
+/// The dictionary stylesheet: every `<style>` body in document order.
+pub fn stylesheet(doc: &Document, plan: &Plan) -> Result<String> {
+    let mut out = String::new();
+    for style in &plan.styles {
+        let css = doc.encoding.decode(style.css.bytes(&doc.rawml)?)?;
+        if !css.trim().is_empty() {
+            out.push_str(&css);
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
 
 pub fn build(doc: &Document, limits: &Limits) -> Result<Plan> {
     let raw = &doc.rawml;
@@ -125,6 +204,7 @@ pub fn build(doc: &Document, limits: &Limits) -> Result<Plan> {
     let mut pending = Vec::new();
     let resources: BTreeMap<u32, _> = doc.resources.iter().map(|r| (r.recindex, r)).collect();
     let mut style_start = None;
+    let mut style_css = None;
     let boundaries: BTreeSet<usize> = doc
         .entries
         .iter()
@@ -147,7 +227,10 @@ pub fn build(doc: &Document, limits: &Limits) -> Result<Plan> {
         match token {
             Token::Raw { name, span } => {
                 if name == "style" {
-                    check_css(&doc.encoding.decode(span.bytes(raw)?)?)?;
+                    let css = doc.encoding.decode(span.bytes(raw)?)?;
+                    check_css(&css)?;
+                    check_balanced(&css)?;
+                    style_css = Some(span);
                 }
             }
             Token::Opaque(_) => {}
@@ -157,9 +240,26 @@ pub fn build(doc: &Document, limits: &Limits) -> Result<Plan> {
                         let start = style_start
                             .take()
                             .ok_or_else(|| Error::Malformed("unmatched style close".into()))?;
-                        plan.styles.push(Span {
+                        let element = Span {
                             start,
                             end: tag.span.end,
+                        };
+                        if boundaries
+                            .range(element.start + 1..element.end)
+                            .next()
+                            .is_some()
+                        {
+                            return Err(Error::Incomplete(
+                                "entry boundary splits a <style> element".into(),
+                            ));
+                        }
+                        let empty = Span {
+                            start: tag.span.start,
+                            end: tag.span.start,
+                        };
+                        plan.styles.push(StyleBlock {
+                            element,
+                            css: style_css.take().unwrap_or(empty),
                         });
                     }
                     continue;
@@ -187,7 +287,9 @@ pub fn build(doc: &Document, limits: &Limits) -> Result<Plan> {
                     ));
                 }
                 if tag.name == "style" {
+                    check_style_element(&tag, raw, doc.encoding)?;
                     style_start = Some(tag.span.start);
+                    style_css = None;
                 }
                 for attr in &tag.attrs {
                     if attr.name.starts_with("on")
@@ -409,8 +511,9 @@ pub fn render_fragment(raw: &[u8], encoding: Encoding, span: Span, plan: &Plan) 
     let mut result = String::new();
     // Global style bytes are copied, never rewritten. This cannot certify renderer equivalence.
     for style in &plan.styles {
-        if !(span.start <= style.start && style.end <= span.end) {
-            result.push_str(&encoding.decode(style.bytes(raw)?)?);
+        let element = style.element;
+        if !(span.start <= element.start && element.end <= span.end) {
+            result.push_str(&encoding.decode(element.bytes(raw)?)?);
         }
     }
     let first = plan.edits.partition_point(|e| e.span.start < span.start);
@@ -433,6 +536,71 @@ pub fn render_fragment(raw: &[u8], encoding: Encoding, span: Span, plan: &Plan) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lexicon_core::{EntryKind, Metadata};
+    fn doc(raw: &str, entries: &[(usize, usize)]) -> Document {
+        Document {
+            namespace: "0".repeat(64),
+            source: Vec::new(),
+            rawml: raw.as_bytes().to_vec(),
+            encoding: Encoding::Utf8,
+            metadata: Metadata::default(),
+            records: Vec::new(),
+            entries: entries
+                .iter()
+                .enumerate()
+                .map(|(i, &(start, end))| Entry {
+                    id: i as u64,
+                    headword: format!("w{i}"),
+                    aliases: Vec::new(),
+                    span: Span { start, end },
+                    kind: EntryKind::Headword,
+                })
+                .collect(),
+            resources: Vec::new(),
+            source_headwords: entries.len(),
+            source_aliases: 0,
+            index_audit: Default::default(),
+        }
+    }
+    fn plan_for(styles: &str) -> Result<(Document, Plan)> {
+        let raw = format!("<html><head>{styles}</head><body><p>one</p></body></html>");
+        let body = raw.find("<body>").unwrap();
+        let doc = doc(&raw, &[(0, body), (body, raw.len())]);
+        let plan = build(&doc, &Limits::default())?;
+        Ok((doc, plan))
+    }
+    #[test]
+    fn style_bodies_form_the_stylesheet_in_document_order() {
+        let (doc, plan) = plan_for(
+            "<style type=\"text/css\">.a{color:red}</style><style media=\"screen\">.b{x:\"}\"}</style><style></style>",
+        )
+        .unwrap();
+        assert_eq!(plan.styles.len(), 3);
+        assert_eq!(
+            plan.styles[0].element.bytes(&doc.rawml).unwrap(),
+            b"<style type=\"text/css\">.a{color:red}</style>"
+        );
+        assert_eq!(
+            stylesheet(&doc, &plan).unwrap(),
+            ".a{color:red}\n.b{x:\"}\"}\n"
+        );
+    }
+    #[test]
+    fn styles_that_cannot_join_a_stylesheet_fail_closed() {
+        for styles in [
+            "<style media=\"print\">.a{}</style>",
+            "<style title=\"alt\">.a{}</style>",
+            "<style>.a{color:red</style>",
+            "<style>.a{}}</style>",
+            "<style>/* open .a{}</style>",
+            "<style>.a{content:\"x}</style>",
+        ] {
+            assert!(plan_for(styles).is_err(), "{styles}");
+        }
+        // An entry boundary between <style> and its body splits the element.
+        let raw = "<style>.a{}</style><p>x</p>";
+        assert!(build(&doc(raw, &[(0, 7), (7, raw.len())]), &Limits::default()).is_err());
+    }
     #[test]
     fn entities_keep_nonascii_and_decode_positions() {
         assert_eq!(entities("é&#233;&amp;中").unwrap(), "éé&中");
