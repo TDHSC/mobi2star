@@ -10,7 +10,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Rust toolchain components
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - name: Select stable compiler
@@ -20,7 +20,7 @@ jobs:
       - name: Build native release binary
         run: cargo build -p mobi2star --release --locked
       - name: Upload native binary after checks
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mobi2star-${{ runner.os }}-${{ runner.arch }}
           path: target/release/mobi2star
@@ -28,7 +28,7 @@ jobs:
     # Keep in sync with rust-version in Cargo.toml.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install the minimum supported Rust
         run: rustup toolchain install 1.85 --profile minimal
       - name: Test on the minimum supported Rust
