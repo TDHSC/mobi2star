@@ -36,10 +36,27 @@ enum BackendArg {
     Srcs,
     Compiled,
 }
+impl From<BackendArg> for mobi2star::Backend {
+    fn from(arg: BackendArg) -> Self {
+        match arg {
+            BackendArg::Auto => Self::Auto,
+            BackendArg::Srcs => Self::Srcs,
+            BackendArg::Compiled => Self::Compiled,
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum LabelsArg {
     En,
     Zh,
+}
+impl From<LabelsArg> for lexicon_core::LabelLanguage {
+    fn from(arg: LabelsArg) -> Self {
+        match arg {
+            LabelsArg::En => Self::En,
+            LabelsArg::Zh => Self::Zh,
+        }
+    }
 }
 #[derive(Subcommand)]
 enum Command {
@@ -127,22 +144,16 @@ fn run(cli: &Cli) -> Result<()> {
             backend,
             labels,
         } => {
-            let selected = match backend {
-                BackendArg::Auto => mobi2star::Backend::Auto,
-                BackendArg::Srcs => mobi2star::Backend::Srcs,
-                BackendArg::Compiled => mobi2star::Backend::Compiled,
-            };
-            let labels = match labels {
-                LabelsArg::En => lexicon_core::LabelLanguage::En,
-                LabelsArg::Zh => lexicon_core::LabelLanguage::Zh,
+            let options = mobi2star::OutputOptions {
+                offset_bits: *offset_bits,
+                labels: (*labels).into(),
             };
             let (bundle, report) = mobi2star::convert_with_backend(
                 input,
                 output,
                 &limits,
-                *offset_bits,
-                labels,
-                selected,
+                options,
+                (*backend).into(),
             )?;
             if cli.json {
                 stdout_json(&serde_json::json!({"bundle": bundle, "report": report}))?;

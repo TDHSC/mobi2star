@@ -1,5 +1,6 @@
 //! Synthetic-only acceptance tests. A passing suite is not a real-dictionary certification.
 use lexicon_core::{Error, LabelLanguage, Limits};
+use mobi2star::OutputOptions;
 use std::{fs, path::Path};
 
 const PLAIN: &[u8] = include_bytes!("../../../tests/fixtures/uncompressed.mobi");
@@ -25,8 +26,7 @@ fn native_round_trip_all_compressions_and_inflection_formats() {
             &source,
             &dir.path().join("output"),
             &Limits::default(),
-            32,
-            LabelLanguage::En,
+            OutputOptions::default(),
         )
         .unwrap();
         assert_eq!(report.source_headwords, 3);
@@ -56,8 +56,7 @@ fn homographs_are_not_overwritten() {
         &source,
         &dir.path().join("out"),
         &Limits::default(),
-        32,
-        LabelLanguage::En,
+        OutputOptions::default(),
     )
     .unwrap();
     let parsed = stardict_io::open(&bundle, &Limits::default()).unwrap();
@@ -85,8 +84,10 @@ fn supplement_keys_follow_the_label_language() {
             &source,
             &dir.path().join("out"),
             &Limits::default(),
-            32,
-            labels,
+            OutputOptions {
+                labels,
+                ..Default::default()
+            },
         )
         .unwrap();
         let parsed = stardict_io::open(&bundle, &Limits::default()).unwrap();
@@ -102,8 +103,7 @@ fn changed_label_language_in_manifest_fails_verification() {
         &source,
         &dir.path().join("out"),
         &Limits::default(),
-        32,
-        LabelLanguage::En,
+        OutputOptions::default(),
     )
     .unwrap();
     let path = bundle.join("manifest.json");
@@ -122,8 +122,7 @@ fn byte_tampering_is_detected() {
         &source,
         &dir.path().join("out"),
         &Limits::default(),
-        32,
-        LabelLanguage::En,
+        OutputOptions::default(),
     )
     .unwrap();
     let path = bundle.join("dictionary.dict");
@@ -139,7 +138,9 @@ fn existing_output_is_untouched() {
     let out = dir.path().join("out");
     fs::create_dir(&out).unwrap();
     fs::write(out.join("sentinel"), b"keep me").unwrap();
-    assert!(mobi2star::convert(&source, &out, &Limits::default(), 32, LabelLanguage::En).is_err());
+    assert!(
+        mobi2star::convert(&source, &out, &Limits::default(), OutputOptions::default()).is_err()
+    );
     assert_eq!(fs::read(out.join("sentinel")).unwrap(), b"keep me");
 }
 #[test]
@@ -151,7 +152,7 @@ fn output_failure_rolls_back_only_its_reservation() {
         output_bytes: 1,
         ..Limits::default()
     };
-    assert!(mobi2star::convert(&source, &out, &limits, 32, LabelLanguage::En).is_err());
+    assert!(mobi2star::convert(&source, &out, &limits, OutputOptions::default()).is_err());
     assert!(!out.exists());
     assert_eq!(fs::read(source).unwrap(), PLAIN);
 }
@@ -182,8 +183,7 @@ fn wrong_original_source_is_rejected() {
         &source,
         &dir.path().join("out"),
         &Limits::default(),
-        32,
-        LabelLanguage::En,
+        OutputOptions::default(),
     )
     .unwrap();
     fs::write(&source, PALM).unwrap();
@@ -197,8 +197,10 @@ fn explicit_64_bit_index_can_be_reopened() {
         &source,
         &dir.path().join("out"),
         &Limits::default(),
-        64,
-        LabelLanguage::En,
+        OutputOptions {
+            offset_bits: 64,
+            ..Default::default()
+        },
     )
     .unwrap();
     assert_eq!(
@@ -217,8 +219,7 @@ fn bundle_symlink_is_rejected() {
         &source,
         &dir.path().join("out"),
         &Limits::default(),
-        32,
-        LabelLanguage::En,
+        OutputOptions::default(),
     )
     .unwrap();
     let path = bundle.join("res/mobi-000001.png");

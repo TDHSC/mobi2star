@@ -1,6 +1,7 @@
 //! Fixtures are produced entirely in Rust from this project's original synthetic
 //! MOBI. No publisher content or external interpreter is needed by this suite.
 use lexicon_core::{sha256, LabelLanguage, Limits};
+use mobi2star::OutputOptions;
 use mobi_reader::{pdb::PalmDatabase, Container};
 use std::{
     fs,
@@ -74,8 +75,7 @@ fn rust_srcs_conversion_reopens_all_content() {
         &source,
         &dir.path().join("converted"),
         &limits,
-        32,
-        LabelLanguage::En,
+        OutputOptions::default(),
     )
     .unwrap();
     assert_eq!(report.source_headwords, 3);
@@ -116,8 +116,10 @@ fn auto_dispatch_uses_srcs_and_lookup_accepts_bundle_root() {
         &source,
         &dir.path().join("out"),
         &limits,
-        64,
-        LabelLanguage::En,
+        OutputOptions {
+            offset_bits: 64,
+            ..Default::default()
+        },
         mobi2star::Backend::Auto,
     )
     .unwrap();
@@ -136,8 +138,7 @@ fn generated_labels_default_to_english_and_chinese_is_opt_in() {
         &source,
         &dir.path().join("en"),
         &limits,
-        32,
-        LabelLanguage::En,
+        OutputOptions::default(),
     )
     .unwrap();
     let disk = stardict_io::open(&bundle.join("StarDict"), &limits).unwrap();
@@ -166,8 +167,10 @@ fn generated_labels_default_to_english_and_chinese_is_opt_in() {
         &source,
         &dir.path().join("zh"),
         &limits,
-        32,
-        LabelLanguage::Zh,
+        OutputOptions {
+            labels: LabelLanguage::Zh,
+            ..Default::default()
+        },
     )
     .unwrap();
     let disk = stardict_io::open(&bundle.join("StarDict"), &limits).unwrap();
@@ -197,7 +200,7 @@ fn source_compiled_mismatch_rolls_back() {
     let source = write_source(dir.path(), &PAGE.replace("第一义项", "changed definition"));
     let out = dir.path().join("out");
     assert!(
-        mobi2star::convert_source(&source, &out, &Limits::default(), 32, LabelLanguage::En)
+        mobi2star::convert_source(&source, &out, &Limits::default(), OutputOptions::default())
             .is_err()
     );
     assert!(!out.exists());
@@ -214,8 +217,7 @@ fn source_inflection_mismatch_is_an_error() {
         &source,
         &dir.path().join("out"),
         &Limits::default(),
-        32,
-        LabelLanguage::En
+        OutputOptions::default()
     )
     .is_err());
 }
@@ -230,8 +232,7 @@ fn missing_anchor_is_an_error() {
         &source,
         &dir.path().join("out"),
         &Limits::default(),
-        32,
-        LabelLanguage::En
+        OutputOptions::default()
     )
     .is_err());
 }
@@ -244,8 +245,7 @@ fn changed_payload_with_rehashed_manifest_fails_regeneration() {
         &source,
         &dir.path().join("out"),
         &limits,
-        32,
-        LabelLanguage::En,
+        OutputOptions::default(),
     )
     .unwrap();
     let path = bundle.join("StarDict/dictionary.dict");
@@ -273,8 +273,7 @@ fn extra_file_and_wrong_original_fail() {
         &source,
         &dir.path().join("out"),
         &limits,
-        32,
-        LabelLanguage::En,
+        OutputOptions::default(),
     )
     .unwrap();
     let wrong = dir.path().join("wrong.mobi");

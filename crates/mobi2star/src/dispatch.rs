@@ -1,6 +1,7 @@
 //! Backend selection is explicit and fail-closed: an SRCS conversion failure
 //! propagates to the caller, preserving its diagnostics and rollback semantics.
-use lexicon_core::{checked_member, read_bounded, LabelLanguage, Limits, Result};
+use crate::OutputOptions;
+use lexicon_core::{checked_member, read_bounded, Limits, Result};
 use std::path::{Path, PathBuf};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Backend {
@@ -39,8 +40,7 @@ pub fn convert_with_backend(
     input: &Path,
     output: &Path,
     limits: &Limits,
-    bits: u8,
-    labels: LabelLanguage,
+    options: OutputOptions,
     backend: Backend,
 ) -> Result<(PathBuf, ConversionReport)> {
     let selected = match backend {
@@ -57,11 +57,11 @@ pub fn convert_with_backend(
     };
     match selected {
         Backend::Srcs => {
-            let (path, report) = crate::convert_source(input, output, limits, bits, labels)?;
+            let (path, report) = crate::convert_source(input, output, limits, options)?;
             Ok((path, ConversionReport::Source(report)))
         }
         Backend::Compiled | Backend::Auto => {
-            let (path, report) = crate::convert(input, output, limits, bits, labels)?;
+            let (path, report) = crate::convert(input, output, limits, options)?;
             Ok((path, ConversionReport::Compiled(report)))
         }
     }

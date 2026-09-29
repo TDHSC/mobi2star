@@ -1,4 +1,7 @@
-use crate::transaction::{sync_directory, Transaction};
+use crate::{
+    transaction::{sync_directory, Transaction},
+    OutputOptions,
+};
 use html_preserve::Plan;
 use lexicon_core::{
     hash_file, read_bounded, sha256, EntryKind, Error, LabelLanguage, Limits, Result, Span,
@@ -129,9 +132,12 @@ pub fn convert(
     input: &Path,
     output: &Path,
     limits: &Limits,
-    offset_bits: u8,
-    labels: LabelLanguage,
+    options: OutputOptions,
 ) -> Result<(PathBuf, Report)> {
+    let OutputOptions {
+        offset_bits,
+        labels,
+    } = options;
     let source = read_bounded(input, limits.input_bytes)?;
     let document = mobi_reader::read(source, limits, labels)?;
     let plan = html_preserve::build(&document, limits)?;

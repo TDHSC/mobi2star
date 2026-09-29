@@ -3,7 +3,7 @@
 use crate::{
     bundle::{collect_files, write_bytes, write_json},
     transaction::{sync_directory, Transaction},
-    FileDigest,
+    FileDigest, OutputOptions,
 };
 use lexicon_core::{
     checked_member, hash_file, read_bounded, sha256, Error, LabelLanguage, Limits, Result, Span,
@@ -187,9 +187,12 @@ fn build(
     source: &[u8],
     root: &Path,
     limits: &Limits,
-    bits: u8,
-    labels: LabelLanguage,
+    options: OutputOptions,
 ) -> Result<SourceReport> {
+    let OutputOptions {
+        offset_bits: bits,
+        labels,
+    } = options;
     let text = labels.text();
     let mobi = Container::open(source, limits)?;
     let (src_record, archive) = mobi
@@ -570,12 +573,11 @@ pub fn convert_source(
     input: &Path,
     output: &Path,
     limits: &Limits,
-    bits: u8,
-    labels: LabelLanguage,
+    options: OutputOptions,
 ) -> Result<(PathBuf, SourceReport)> {
     let source = read_bounded(input, limits.input_bytes)?;
     let tx = Transaction::begin(output)?;
-    let report = build(&source, tx.path()?, limits, bits, labels)?;
+    let report = build(&source, tx.path()?, limits, options)?;
     drop(source);
     let verified = verify_source(tx.path()?, Some(input), limits)?;
     if report != verified {
@@ -664,8 +666,10 @@ pub fn verify_source(
         &source,
         stage.path(),
         limits,
-        manifest.offset_bits,
-        manifest.labels,
+        OutputOptions {
+            offset_bits: manifest.offset_bits,
+            labels: manifest.labels,
+        },
     )?;
     let regenerated: SourceManifest = serde_json::from_slice(&read_bounded(
         &stage.path().join("manifest.json"),

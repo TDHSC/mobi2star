@@ -57,12 +57,12 @@ The output budget is enforced while emitting source/audit/browser data and while
 
 ```rust
 use std::path::Path;
-use lexicon_core::{LabelLanguage, Limits};
-use mobi2star::{Backend, ConversionReport};
+use lexicon_core::Limits;
+use mobi2star::{Backend, ConversionReport, OutputOptions};
 
 fn convert_book(input: &Path, output: &Path) -> lexicon_core::Result<()> {
     let (bundle, report) = mobi2star::convert_with_backend(
-        input, output, &Limits::default(), 32, LabelLanguage::En, Backend::Auto,
+        input, output, &Limits::default(), OutputOptions::default(), Backend::Auto,
     )?;
     match report {
         ConversionReport::Source(report) => {
@@ -76,7 +76,7 @@ fn convert_book(input: &Path, output: &Path) -> lexicon_core::Result<()> {
 }
 ```
 
-`convert` / `verify` remain the original typed compiled-adapter APIs. `convert_source` / `verify_source` expose the new typed source report. `convert_with_backend` / `verify_bundle` provide typed unified dispatch.
+`OutputOptions` groups every choice that changes bundle bytes (offset width and label language); conversions take it instead of separate parameters, and manifests record its values for verification. `convert` / `verify` remain the original typed compiled-adapter APIs. `convert_source` / `verify_source` expose the new typed source report. `convert_with_backend` / `verify_bundle` provide typed unified dispatch.
 
 
 ## Readability adapter

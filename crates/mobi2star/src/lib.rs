@@ -1,9 +1,11 @@
 //! Bundle orchestration. Parsers and renderers do not depend on this crate or CLI.
 #![forbid(unsafe_code)]
 mod bundle;
+mod output;
 mod transaction;
 mod verify;
 pub use bundle::{convert, FileDigest, Manifest, Report};
+pub use output::OutputOptions;
 pub use verify::verify;
 
 mod dispatch;
