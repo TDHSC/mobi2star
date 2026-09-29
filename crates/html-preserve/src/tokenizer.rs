@@ -170,8 +170,7 @@ impl<'a> Tokenizer<'a> {
                     p += 1;
                 }
                 let mut value = None;
-                let attr_end;
-                if b.get(p) == Some(&b'=') {
+                let attr_end = if b.get(p) == Some(&b'=') {
                     p += 1;
                     while b.get(p).is_some_and(u8::is_ascii_whitespace) {
                         p += 1;
@@ -209,10 +208,10 @@ impl<'a> Tokenizer<'a> {
                             end: p,
                         });
                     }
-                    attr_end = p;
+                    p
                 } else {
-                    attr_end = name_end;
-                }
+                    name_end
+                };
                 attrs.push(Attribute {
                     name: aname,
                     span: Span {
