@@ -1,9 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.3.0-alpha.1 — English labels and prebuilt binaries
 
+- Alpha: the automated tests use synthetic fixtures only. Run `mobi2star verify` on each converted dictionary and check it in your reader before relying on it.
+- Prebuilt binaries for macOS (Apple Silicon, Intel) and Linux (x86_64, ARM64; statically linked) are attached to each GitHub release, with SHA-256 checksums and build-provenance attestations.
 - Generated labels are now English by default: lookup keys for chapters, uncovered text and image galleries, and the offline viewer interface. `convert --labels zh` restores the previous Chinese labels. The language is recorded in `manifest.json`, and verification regenerates with it.
 - Fixed: SRCS pages that start with a UTF-8 byte-order mark failed to parse, because every tag span was shifted by three bytes.
+- Library: `convert`, `convert_source`, `convert_with_backend` and `mobi_reader::read` now take a `LabelLanguage`, and bundle manifests have a required `labels` field.
+- Dependencies are pinned by the committed `Cargo.lock`, and CI also tests the minimum supported Rust version, 1.85.
 
 ## 0.2.2-alpha.1 — Collins readability profile v2
 

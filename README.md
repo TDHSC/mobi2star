@@ -14,12 +14,40 @@ A native Rust converter from MOBI dictionaries to [StarDict](https://stardict-4.
 - **Readability profile for Collins COBUILD.** A built-in layout adapter that makes Collins COBUILD dictionaries readable on narrow screens. See [docs/READABILITY.md](docs/READABILITY.md).
 - **Local and bounded.** One binary with no helper processes and no network access. Input, decompression and output sizes have explicit budgets, and application code forbids `unsafe`.
 
-## Build
+## Install
 
-You need a Rust toolchain; the minimum supported version is 1.85, and current stable is recommended.
+### Prebuilt binaries
+
+Every [release](https://github.com/TDHSC/mobi2star/releases) has an archive for each supported platform:
+
+| Platform | Archive suffix |
+|---|---|
+| macOS, Apple Silicon | `aarch64-apple-darwin` |
+| macOS, Intel | `x86_64-apple-darwin` |
+| Linux, x86_64 (static, any distribution) | `x86_64-unknown-linux-musl` |
+| Linux, ARM64 (static, any distribution) | `aarch64-unknown-linux-musl` |
+
+Download the archive for your platform, extract it, and put `mobi2star` on your `PATH`.
+
+Each release also includes a `SHA256SUMS` file and a build-provenance attestation for every archive. To check an archive:
 
 ```sh
-./tools/qa.sh                                    # format, test, lint, release build
+shasum -a 256 -c SHA256SUMS --ignore-missing
+gh attestation verify mobi2star-*.tar.gz --repo TDHSC/mobi2star
+```
+
+The macOS binaries are not signed or notarized, so macOS blocks them the first time. After extracting, clear the quarantine flag:
+
+```sh
+xattr -d com.apple.quarantine mobi2star
+```
+
+### From source
+
+You need a Rust toolchain. The minimum supported version is 1.85; current stable is recommended.
+
+```sh
+./tools/qa.sh                                    # check formatting, test, lint, release build
 cargo install --path crates/mobi2star --locked   # install the CLI
 ```
 
