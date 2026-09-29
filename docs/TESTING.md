@@ -6,7 +6,7 @@
 ./tools/qa.sh
 ```
 
-The script formats the workspace and runs the whole workspace test suite, then Clippy, then a release build of the CLI. If there is no `Cargo.lock` it generates one first. To run a single crate's tests:
+The script formats the workspace and runs the whole workspace test suite, then Clippy, then a release build of the CLI. To run a single crate's tests:
 
 ```sh
 cargo test -p srcs-render --locked

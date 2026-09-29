@@ -22,7 +22,7 @@ SHA-256 manifests describe exact file membership, size and bytes. `verify --sour
 
 The implementation does not provide a malicious same-user concurrent-filesystem attacker boundary. File races, filesystem failures, dependency flaws and common-mode parser defects remain possible. Directory sync/atomic publication improve crash behavior; they do not establish universal crash-consistency guarantees across every filesystem.
 
-Application source uses safe Rust; dependency internals and operating-system interfaces have their own safety boundaries. First-time dependency resolution still needs a real `Cargo.lock`. Preserve and review that lock and the dependency tree before treating a build as reproducible. No dependency security certification is implied by the direct version pins.
+Application source uses safe Rust; dependency internals and operating-system interfaces have their own safety boundaries. Dependencies are pinned by the committed `Cargo.lock`, which QA and CI use with `--locked`; review lockfile changes like code changes. The workspace uses resolver 3, so dependency updates prefer versions that support the declared minimum Rust version. No dependency security certification is implied by the direct version pins.
 
 ## Resource expectations
 

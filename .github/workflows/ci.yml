@@ -15,7 +15,7 @@ jobs:
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - name: Select stable compiler
         run: rustup default stable
-      - name: Resolve dependencies and run full native harness
+      - name: Run the native quality gate
         run: ./tools/qa.sh
       - name: Build native release binary
         run: cargo build -p mobi2star --release --locked
@@ -24,9 +24,3 @@ jobs:
         with:
           name: mobi2star-${{ runner.os }}-${{ runner.arch }}
           path: target/release/mobi2star
-      - name: Retain the resolved dependency lock for review
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-lock-${{ matrix.os }}
-          path: Cargo.lock

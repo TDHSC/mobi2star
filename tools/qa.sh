@@ -3,7 +3,6 @@
 set -eu
 cd "$(dirname "$0")/.."
 command -v cargo >/dev/null 2>&1 || { printf '%s\n' 'Install the Rust toolchain, then rerun ./tools/qa.sh.' >&2; exit 1; }
-if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
 cargo fmt --all
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked
