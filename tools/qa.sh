@@ -3,7 +3,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 command -v cargo >/dev/null 2>&1 || { printf '%s\n' 'Install the Rust toolchain, then rerun ./tools/qa.sh.' >&2; exit 1; }
-cargo fmt --all
+cargo fmt --all --check
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked
 cargo build --release -p mobi2star --locked
