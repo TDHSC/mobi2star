@@ -1,6 +1,6 @@
 //! Attribute-level rewrites with byte provenance, never DOM reserialization.
 #![forbid(unsafe_code)]
-pub pub mod tokenizer;
+pub mod tokenizer;
 use lexicon_core::{Document, Encoding, Entry, Error, Limits, Result, Span};
 use serde::{Deserialize, Serialize};
 use std::{cmp::Reverse, collections::{BTreeMap, BTreeSet, BinaryHeap}};
