@@ -73,7 +73,9 @@ pub fn verify_bundle(
 ) -> Result<ConversionReport> {
     let bytes = read_bounded(&checked_member(root, "manifest.json")?, 16 * 1024 * 1024)?;
     let manifest: serde_json::Value = serde_json::from_slice(&bytes)?;
-    if manifest.get("schema").and_then(serde_json::Value::as_u64) == Some(2) {
+    if manifest.get("backend").and_then(serde_json::Value::as_str)
+        == Some(crate::source_bundle::BACKEND)
+    {
         Ok(ConversionReport::Source(crate::verify_source(
             root, source, limits,
         )?))

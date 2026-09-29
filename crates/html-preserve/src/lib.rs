@@ -1,7 +1,9 @@
 //! Attribute-level rewrites with byte provenance, never DOM reserialization.
 #![forbid(unsafe_code)]
 pub mod tokenizer;
-use lexicon_core::{Document, Encoding, Entry, Error, Limits, Result, Span};
+use lexicon_core::{
+    Document, Encoding, Entry, Error, Limits, Result, Span, StyleDelivery, LINK_TAG,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Reverse,
@@ -184,13 +186,17 @@ fn check_style_element(tag: &Tag, raw: &[u8], encoding: Encoding) -> Result<()> 
     }
     Ok(())
 }
-/// The dictionary stylesheet: every `<style>` body in document order.
+/// Whether a `<style>` body holds any CSS. The stylesheet file and the
+/// per-payload link use this same test, so a link never points at nothing.
+fn has_css(style: &StyleBlock, raw: &[u8]) -> Result<bool> {
+    Ok(!style.css.bytes(raw)?.iter().all(u8::is_ascii_whitespace))
+}
+/// The dictionary stylesheet: every non-blank `<style>` body in document order.
 pub fn stylesheet(doc: &Document, plan: &Plan) -> Result<String> {
     let mut out = String::new();
     for style in &plan.styles {
-        let css = doc.encoding.decode(style.css.bytes(&doc.rawml)?)?;
-        if !css.trim().is_empty() {
-            out.push_str(&css);
+        if has_css(style, &doc.rawml)? {
+            out.push_str(&doc.encoding.decode(style.css.bytes(&doc.rawml)?)?);
             out.push('\n');
         }
     }
@@ -503,17 +509,40 @@ fn owners_at(entries: &[Entry], positions: &BTreeSet<usize>) -> Result<BTreeMap<
     Ok(result)
 }
 
-pub fn render(doc: &Document, entry: &Entry, plan: &Plan) -> Result<String> {
-    render_fragment(&doc.rawml, doc.encoding, entry.span, plan)
+pub fn render(
+    doc: &Document,
+    entry: &Entry,
+    plan: &Plan,
+    delivery: StyleDelivery,
+) -> Result<String> {
+    render_fragment(&doc.rawml, doc.encoding, entry.span, plan, delivery)
 }
-pub fn render_fragment(raw: &[u8], encoding: Encoding, span: Span, plan: &Plan) -> Result<String> {
+pub fn render_fragment(
+    raw: &[u8],
+    encoding: Encoding,
+    span: Span,
+    plan: &Plan,
+    delivery: StyleDelivery,
+) -> Result<String> {
     span.bytes(raw)?;
     let mut result = String::new();
-    // Global style bytes are copied, never rewritten. This cannot certify renderer equivalence.
-    for style in &plan.styles {
-        let element = style.element;
-        if !(span.start <= element.start && element.end <= span.end) {
-            result.push_str(&encoding.decode(element.bytes(raw)?)?);
+    if delivery.link {
+        let mut linked = false;
+        for style in &plan.styles {
+            linked |= has_css(style, raw)?;
+        }
+        if linked {
+            result.push_str(LINK_TAG);
+        }
+    }
+    // Inline copies are the source <style> elements outside this entry, copied
+    // byte for byte. This cannot certify renderer equivalence.
+    if delivery.inline {
+        for style in &plan.styles {
+            let element = style.element;
+            if !(span.start <= element.start && element.end <= span.end) {
+                result.push_str(&encoding.decode(element.bytes(raw)?)?);
+            }
         }
     }
     let first = plan.edits.partition_point(|e| e.span.start < span.start);
@@ -617,7 +646,8 @@ mod tests {
                     start: 0,
                     end: raw.len()
                 },
-                &Plan::default()
+                &Plan::default(),
+                StyleDelivery::INLINE
             )
             .unwrap()
             .as_bytes(),
@@ -642,7 +672,8 @@ mod tests {
                 start: 0,
                 end: raw.len()
             },
-            &plan
+            &plan,
+            StyleDelivery::INLINE
         )
         .unwrap()
         .starts_with("中!<a"));

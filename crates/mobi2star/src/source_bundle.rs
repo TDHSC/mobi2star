@@ -2,12 +2,13 @@
 //! MOBI and compares the actual artifacts, in addition to an independent IDX reader.
 use crate::{
     bundle::{collect_files, write_bytes, write_json},
+    manifest::{check_header, TOOL},
     transaction::{sync_directory, Transaction},
     FileDigest, OutputOptions,
 };
 use lexicon_core::{
     checked_member, hash_file, read_bounded, sha256, Error, LabelLanguage, Limits, Result, Span,
-    StyleDelivery,
+    TargetReader,
 };
 use mobi_reader::Container;
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub(crate) const BACKEND: &str = "srcs-rust";
+pub(crate) const SCHEMA: u32 = 3;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct SourceReport {
@@ -49,6 +52,7 @@ pub struct SourceReport {
     pub classified_pdb_records: usize,
     pub skipped_entries: usize,
     pub offset_bits: u8,
+    pub reader: TargetReader,
     pub verification_scope: Vec<String>,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,6 +66,8 @@ struct SourceManifest {
     offset_bits: u8,
     /// Language of generated keys, galleries and viewer text; verification regenerates with it.
     labels: LabelLanguage,
+    /// Reader the payloads' stylesheet references were made for.
+    reader: TargetReader,
     files: Vec<FileDigest>,
 }
 #[derive(Serialize)]
@@ -193,10 +199,10 @@ fn build(
     let OutputOptions {
         offset_bits: bits,
         labels,
+        reader,
     } = options;
     let text = labels.text();
-    // Every payload still carries its own stylesheet copy.
-    let style = StyleDelivery::INLINE;
+    let style = reader.style_delivery();
     let mobi = Container::open(source, limits)?;
     let (src_record, archive) = mobi
         .source_archive()?
@@ -504,13 +510,13 @@ fn build(
     sink.json("Audit/catalog-items.json", &items)?;
     sink.json("Audit/catalog-aliases.json", &aliases)?;
     let report=SourceReport{
-        schema:2,backend:"srcs-rust".into(),implemented_content_checks_passed:true,rendering_status:"unverified_reader_dependent".into(),layout_profile:plan.layout_profile.clone(),
+        schema:SCHEMA,backend:BACKEND.into(),implemented_content_checks_passed:true,rendering_status:"unverified_reader_dependent".into(),layout_profile:plan.layout_profile.clone(),
         source_sha256:namespace.clone(),source_archive_sha256:book.archive_sha256.clone(),source_headwords:book.orths.len(),source_aliases:book.forms.len(),
         definitions:book.entries.len(),chapters:book.pages.len(),supplement_entries:book.pages.len()+2,
         output_entries:catalog.index.len(),output_synonyms:catalog.synonyms.len(),source_body_bytes:book.source_body_bytes(),covered_source_body_bytes:book.source_body_bytes(),
         rawml_bytes:rawml.len(),source_files:book.files.len(),source_images:source_gallery.len(),compiled_images:resources.len(),internal_links:plan.links.len(),
         external_links:book.pages.values().map(|p|p.links.iter().filter(|l|l.target.is_none()).count()).sum(),
-        source_image_references:book.pages.values().map(|p|p.images.len()).sum(),classified_pdb_records:cross.record_roles.len(),skipped_entries:0,offset_bits:bits,
+        source_image_references:book.pages.values().map(|p|p.images.len()).sum(),classified_pdb_records:cross.record_roles.len(),skipped_entries:0,offset_bits:bits,reader,
         verification_scope:vec!["SRCS/compiled headword and inflection multisets with ownership and multiplicity".into(),
             "Every definition's whitespace-normalized visible text agrees with compiled MOBI".into(),
             "Every source chapter body is rendered by byte-preserving edits; all ZIP files retained exactly".into(),
@@ -540,13 +546,14 @@ fn build(
         })
         .collect::<Result<Vec<_>>>()?;
     let manifest = SourceManifest {
-        schema: 2,
-        backend: "srcs-rust".into(),
-        tool: "mobi2star".into(),
+        schema: SCHEMA,
+        backend: BACKEND.into(),
+        tool: TOOL.into(),
         version: env!("CARGO_PKG_VERSION").into(),
         source_sha256: namespace,
         offset_bits: bits,
         labels,
+        reader,
         files,
     };
     let encoded = serde_json::to_vec_pretty(&manifest)?;
@@ -595,18 +602,10 @@ pub fn verify_source(
     limits: &Limits,
 ) -> Result<SourceReport> {
     let manifest_bytes = read_bounded(&checked_member(root, "manifest.json")?, 16 * 1024 * 1024)?;
+    check_header(&manifest_bytes, SCHEMA)?;
     let manifest: SourceManifest = serde_json::from_slice(&manifest_bytes)?;
-    if manifest.schema != 2
-        || manifest.backend != "srcs-rust"
-        || manifest.tool != "mobi2star"
-        || !matches!(manifest.offset_bits, 32 | 64)
-    {
+    if manifest.backend != BACKEND || !matches!(manifest.offset_bits, 32 | 64) {
         return Err(Error::Verify("source manifest profile".into()));
-    }
-    if manifest.version != env!("CARGO_PKG_VERSION") {
-        return Err(Error::Unsupported(
-            "deterministic verification requires the producing mobi2star version".into(),
-        ));
     }
     let actual = collect_files(root)?;
     if actual
@@ -670,6 +669,7 @@ pub fn verify_source(
         OutputOptions {
             offset_bits: manifest.offset_bits,
             labels: manifest.labels,
+            reader: manifest.reader,
         },
     )?;
     let regenerated: SourceManifest = serde_json::from_slice(&read_bounded(

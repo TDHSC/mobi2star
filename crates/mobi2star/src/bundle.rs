@@ -1,11 +1,12 @@
 use crate::{
+    manifest::TOOL,
     transaction::{sync_directory, Transaction},
     OutputOptions,
 };
 use html_preserve::Plan;
 use lexicon_core::{
     hash_file, read_bounded, sha256, EntryKind, Error, LabelLanguage, Limits, Result, Span,
-    StyleDelivery,
+    TargetReader,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -20,6 +21,7 @@ pub struct FileDigest {
     pub bytes: u64,
     pub sha256: String,
 }
+pub(crate) const SCHEMA: u32 = 2;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -28,8 +30,11 @@ pub struct Manifest {
     pub version: String,
     pub source_sha256: String,
     pub rawml_sha256: String,
+    pub offset_bits: u8,
     /// Language of generated lookup keys; verification regenerates with it.
     pub labels: LabelLanguage,
+    /// Reader the payloads' stylesheet references were made for.
+    pub reader: TargetReader,
     pub files: Vec<FileDigest>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -51,6 +56,7 @@ pub struct Report {
     pub external_links_retained: usize,
     pub skipped_entries: usize,
     pub offset_bits: u8,
+    pub reader: TargetReader,
     pub notes: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -110,20 +116,25 @@ pub(crate) fn collect_files(root: &Path) -> Result<Vec<String>> {
     files.sort();
     Ok(files)
 }
-pub(crate) fn report(doc: &lexicon_core::Document, plan: &Plan, offset_bits: u8) -> Report {
-    Report { schema: 1, implemented_content_checks_passed: true, rendering_status: "unverified_reader_dependent".into(),
+pub(crate) fn report(
+    doc: &lexicon_core::Document,
+    plan: &Plan,
+    offset_bits: u8,
+    reader: TargetReader,
+) -> Report {
+    Report { schema: SCHEMA, implemented_content_checks_passed: true, rendering_status: "unverified_reader_dependent".into(),
         source_headwords: doc.source_headwords, source_aliases: doc.source_aliases,
         supplement_entries: doc.entries.iter().filter(|e| e.kind == EntryKind::Supplement).count(),
         output_entries: doc.entries.len(), output_synonyms: doc.source_aliases + doc.entries.len(),
         source_rawml_bytes: doc.rawml.len(), covered_rawml_bytes: doc.rawml.len(), copied_resources: doc.resources.len(),
         resolved_resource_references: plan.resource_links.len(), resolved_internal_links: plan.links.len(),
-        external_links_retained: plan.external_links, skipped_entries: 0, offset_bits,
+        external_links_retained: plan.external_links, skipped_entries: 0, offset_bits, reader,
         notes: vec![
             "Coverage measures the union of decompressed source byte ranges; it is not proof of universal MOBI semantic support.".into(),
             "All source spellings and explicit inflections are retained without Unicode normalization; reader lookup/folding may differ.".into(),
             "Internal links use stable entry aliases plus exact byte-position anchors; fragment navigation must be acceptance-tested in the target reader.".into(),
             "Images are copied byte-for-byte after signature recognition; image decoding and rendered appearance are not verified.".into(),
-            "Global style blocks are copied, but inherited container context, embedded book structure and reader CSS can change appearance.".into(),
+            "Source <style> bodies form dictionary.css; payloads reference it as the recorded reader needs (res/ link, inline copies or both). Inherited container context, embedded book structure and reader CSS can still change appearance.".into(),
             "The manifest detects accidental changes, not malicious replacement: it is not digitally signed.".into(),
         ] }
 }
@@ -138,6 +149,7 @@ pub fn convert(
     let OutputOptions {
         offset_bits,
         labels,
+        reader,
     } = options;
     let source = read_bounded(input, limits.input_bytes)?;
     let document = mobi_reader::read(source, limits, labels)?;
@@ -146,14 +158,13 @@ pub fn convert(
     let root = tx.path()?;
     fs::create_dir(root.join("archive"))?;
     fs::create_dir(root.join("res"))?;
-    // Every payload still carries its own copy of the source <style> elements.
-    let style = StyleDelivery::INLINE;
+    let style = reader.style_delivery();
     let css = html_preserve::stylesheet(&document, &plan)?;
     for (path, bytes) in stardict_io::stylesheet_files(&css, style) {
         write_bytes(root, &path, bytes)?;
     }
     let written = stardict_io::write(root, &document, limits, offset_bits, |entry| {
-        html_preserve::render(&document, entry, &plan)
+        html_preserve::render(&document, entry, &plan, style)
     })?;
     write_bytes(root, "archive/source.mobi", &document.source)?;
     write_bytes(root, "archive/rawml.bin", &document.rawml)?;
@@ -193,7 +204,7 @@ pub fn convert(
     entries.flush()?;
     entries.get_ref().sync_all()?;
     drop(entries);
-    let report = report(&document, &plan, offset_bits);
+    let report = report(&document, &plan, offset_bits, reader);
     write_json(root, "report.json", &report)?;
     let files = collect_files(root)?
         .into_iter()
@@ -207,12 +218,14 @@ pub fn convert(
         })
         .collect::<Result<Vec<_>>>()?;
     let manifest = Manifest {
-        schema: 1,
-        tool: "mobi2star".into(),
+        schema: SCHEMA,
+        tool: TOOL.into(),
         version: env!("CARGO_PKG_VERSION").into(),
         source_sha256: sha256(&document.source),
         rawml_sha256: sha256(&document.rawml),
+        offset_bits,
         labels,
+        reader,
         files,
     };
     write_json(root, "manifest.json", &manifest)?;

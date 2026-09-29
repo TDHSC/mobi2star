@@ -1,5 +1,5 @@
 //! Synthetic-only acceptance tests. A passing suite is not a real-dictionary certification.
-use lexicon_core::{sha256, Error, LabelLanguage, Limits};
+use lexicon_core::{sha256, Error, LabelLanguage, Limits, TargetReader, LINK_TAG};
 use mobi2star::OutputOptions;
 use std::{fs, path::Path};
 
@@ -129,24 +129,80 @@ fn rewrite_with_digest(bundle: &Path, name: &str, bytes: &[u8]) {
     }
     fs::write(path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
 }
+fn converted(dir: &Path, reader: TargetReader) -> (std::path::PathBuf, std::path::PathBuf) {
+    let source = input(dir, PLAIN);
+    let options = OutputOptions {
+        reader,
+        ..Default::default()
+    };
+    let (bundle, report) =
+        mobi2star::convert(&source, &dir.join("out"), &Limits::default(), options).unwrap();
+    assert_eq!(report.reader, reader);
+    (source, bundle)
+}
 #[test]
-fn stylesheet_file_holds_the_source_style_bodies() {
+fn each_reader_gets_its_stylesheet_delivery() {
+    let css = ".definition{font-weight:normal}\n";
+    for reader in TargetReader::ALL {
+        let delivery = reader.style_delivery();
+        let dir = tempfile::tempdir().unwrap();
+        let (source, bundle) = converted(dir.path(), reader);
+        assert_eq!(
+            fs::read_to_string(bundle.join("dictionary.css")).unwrap(),
+            css
+        );
+        assert_eq!(
+            fs::read_to_string(bundle.join("res/dictionary.css"))
+                .ok()
+                .as_deref(),
+            delivery.link.then_some(css),
+            "{reader:?}"
+        );
+        // "run" lies outside the source <style>, so every reference in it is generated.
+        let parsed = stardict_io::open(&bundle, &Limits::default()).unwrap();
+        let mut dict = fs::File::open(&parsed.dictionary_path).unwrap();
+        let run = &parsed.entries[parsed.lookup("run")[0]];
+        let html =
+            stardict_io::read_payload(&mut dict, run, Limits::default().entry_bytes).unwrap();
+        assert_eq!(html.starts_with(LINK_TAG), delivery.link, "{reader:?}");
+        assert_eq!(html.contains("<style>"), delivery.inline, "{reader:?}");
+        mobi2star::verify(&bundle, Some(&source), &Limits::default()).unwrap();
+    }
+}
+#[test]
+fn verification_follows_the_recorded_reader_and_stylesheet() {
     let dir = tempfile::tempdir().unwrap();
-    let source = input(dir.path(), PLAIN);
-    let (bundle, _) = mobi2star::convert(
-        &source,
-        &dir.path().join("out"),
-        &Limits::default(),
-        OutputOptions::default(),
-    )
-    .unwrap();
-    assert_eq!(
-        fs::read_to_string(bundle.join("dictionary.css")).unwrap(),
-        ".definition{font-weight:normal}\n"
-    );
-    assert!(!bundle.join("res/dictionary.css").exists());
-    rewrite_with_digest(&bundle, "dictionary.css", b".definition{color:red}\n");
+    let (_, bundle) = converted(dir.path(), TargetReader::Koreader);
+    rewrite_with_digest(&bundle, "res/dictionary.css", b".definition{color:red}\n");
     assert!(mobi2star::verify(&bundle, None, &Limits::default()).is_err());
+
+    let dir = tempfile::tempdir().unwrap();
+    let (_, bundle) = converted(dir.path(), TargetReader::Koreader);
+    let path = bundle.join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(manifest["reader"], "koreader");
+    manifest["reader"] = "readest".into();
+    fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    assert!(mobi2star::verify(&bundle, None, &Limits::default()).is_err());
+}
+#[test]
+fn bundles_from_another_version_get_a_clear_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, bundle) = converted(dir.path(), TargetReader::default());
+    assert!(matches!(
+        mobi2star::verify_bundle(&bundle, None, &Limits::default()),
+        Ok(mobi2star::ConversionReport::Compiled(_))
+    ));
+    let path = bundle.join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    manifest["version"] = "0.0.0".into();
+    fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    assert!(matches!(
+        mobi2star::verify(&bundle, None, &Limits::default()),
+        Err(Error::Unsupported(message)) if message.contains("0.0.0")
+    ));
 }
 #[test]
 fn byte_tampering_is_detected() {

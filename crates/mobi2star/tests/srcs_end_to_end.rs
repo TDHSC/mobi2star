@@ -1,6 +1,6 @@
 //! Fixtures are produced entirely in Rust from this project's original synthetic
 //! MOBI. No publisher content or external interpreter is needed by this suite.
-use lexicon_core::{sha256, LabelLanguage, Limits};
+use lexicon_core::{sha256, LabelLanguage, Limits, TargetReader, LINK_TAG};
 use mobi2star::OutputOptions;
 use mobi_reader::{pdb::PalmDatabase, Container};
 use std::{
@@ -194,31 +194,109 @@ fn generated_labels_default_to_english_and_chinese_is_opt_in() {
     fs::write(mpath, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
     assert!(mobi2star::verify_source(&bundle, None, &limits).is_err());
 }
+fn payload(bundle: &Path, word: &str) -> String {
+    let limits = Limits::default();
+    let disk = stardict_io::open(&bundle.join("StarDict"), &limits).unwrap();
+    let mut dict = fs::File::open(&disk.dictionary_path).unwrap();
+    stardict_io::read_payload(
+        &mut dict,
+        &disk.entries[disk.lookup(word)[0]],
+        limits.entry_bytes,
+    )
+    .unwrap()
+}
+/// Relative path and SHA-256 of every file under `root`, sorted.
+fn tree_digest(root: &Path) -> Vec<(String, String)> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, String)>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(root, &path, out);
+            } else {
+                let name = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                out.push((name, sha256(&fs::read(&path).unwrap())));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort();
+    out
+}
 #[test]
-fn source_profile_books_get_their_scoped_stylesheet_file() {
+fn each_reader_gets_its_stylesheet_delivery() {
     let dir = tempfile::tempdir().unwrap();
     let source = write_source(dir.path(), PAGE);
     let limits = Limits::default();
-    let (bundle, report) = mobi2star::convert_source(
-        &source,
-        &dir.path().join("out"),
-        &limits,
-        OutputOptions::default(),
-    )
-    .unwrap();
-    assert_eq!(report.layout_profile, "source");
-    let css = fs::read_to_string(bundle.join("StarDict/dictionary.css")).unwrap();
-    assert!(
-        css.starts_with(".m2s_")
-            && css.contains("font-family:serif")
-            && css.contains("font-weight:normal")
-    );
-    // One stylesheet set: the file is exactly what each payload inlines.
-    let disk = stardict_io::open(&bundle.join("StarDict"), &limits).unwrap();
-    let mut dict = fs::File::open(&disk.dictionary_path).unwrap();
-    let run = &disk.entries[disk.lookup("run")[0]];
-    let html = stardict_io::read_payload(&mut dict, run, limits.entry_bytes).unwrap();
-    assert!(html.starts_with(&format!("<style>{css}</style>")));
+    let mut unaffected = None;
+    for reader in TargetReader::ALL {
+        let delivery = reader.style_delivery();
+        let options = OutputOptions {
+            reader,
+            ..Default::default()
+        };
+        let (bundle, report) = mobi2star::convert_source(
+            &source,
+            &dir.path().join(format!("{reader:?}")),
+            &limits,
+            options,
+        )
+        .unwrap();
+        assert_eq!(
+            (report.reader, report.layout_profile.as_str()),
+            (reader, "source")
+        );
+        // Source-profile books get their scoped CSS as the KOReader companion file.
+        let css = fs::read_to_string(bundle.join("StarDict/dictionary.css")).unwrap();
+        assert!(css.starts_with(".m2s_") && css.contains("font-family:serif"));
+        assert_eq!(
+            fs::read_to_string(bundle.join("StarDict/res/dictionary.css")).ok(),
+            delivery.link.then(|| css.clone()),
+            "{reader:?}"
+        );
+        // References come first, link before inline copy, then the wrapper.
+        let mut prefix = String::new();
+        if delivery.link {
+            prefix.push_str(LINK_TAG);
+        }
+        if delivery.inline {
+            prefix.push_str(&format!("<style>{css}</style>"));
+        }
+        assert!(
+            payload(&bundle, "run").starts_with(&format!("{prefix}<div class=\"m2s_")),
+            "{reader:?}"
+        );
+        // The reader changes StarDict payloads only, never the viewer or the plan.
+        let mut digest = tree_digest(&bundle.join("Browser"));
+        digest.extend(
+            tree_digest(&bundle.join("Audit"))
+                .into_iter()
+                .filter(|(n, _)| n == "render-plan.json"),
+        );
+        assert_eq!(
+            unaffected.get_or_insert_with(|| digest.clone()),
+            &digest,
+            "{reader:?}"
+        );
+        mobi2star::verify_source(&bundle, Some(&source), &limits).unwrap();
+    }
+    // Verification regenerates with the recorded reader.
+    let bundle = dir.path().join("Universal/bundle");
+    assert!(matches!(
+        mobi2star::verify_bundle(&bundle, Some(&source), &limits),
+        Ok(mobi2star::ConversionReport::Source(_))
+    ));
+    let path = bundle.join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(manifest["reader"], "universal");
+    manifest["reader"] = "koreader".into();
+    fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    assert!(mobi2star::verify_source(&bundle, None, &limits).is_err());
 }
 #[test]
 fn source_compiled_mismatch_rolls_back() {

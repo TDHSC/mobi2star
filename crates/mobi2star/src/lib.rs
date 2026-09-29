@@ -1,6 +1,7 @@
 //! Bundle orchestration. Parsers and renderers do not depend on this crate or CLI.
 #![forbid(unsafe_code)]
 mod bundle;
+mod manifest;
 mod output;
 mod transaction;
 mod verify;

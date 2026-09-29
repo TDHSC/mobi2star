@@ -1,5 +1,6 @@
 use crate::{
-    bundle::{collect_files, report, RecordAudit},
+    bundle::{collect_files, report, RecordAudit, SCHEMA},
+    manifest::check_header,
     Manifest, Report,
 };
 use lexicon_core::{
@@ -78,11 +79,10 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
     if root.symlink_metadata()?.file_type().is_symlink() {
         return Err(Error::Verify("bundle root cannot be a symlink".into()));
     }
-    let manifest: Manifest = json(root, "manifest.json", 32 * 1024 * 1024)?;
-    ensure(
-        manifest.schema == 1 && manifest.tool == "mobi2star",
-        "unsupported bundle schema/tool",
-    )?;
+    let manifest_bytes = read_bounded(&checked_member(root, "manifest.json")?, 32 * 1024 * 1024)?;
+    check_header(&manifest_bytes, SCHEMA)?;
+    let manifest: Manifest = serde_json::from_slice(&manifest_bytes)?;
+    let style = manifest.reader.style_delivery();
     ensure(manifest.files.len() <= 131072, "too many manifest members")?;
     let actual_names = collect_files(root)?;
     let declared_names: Vec<String> = manifest.files.iter().map(|f| f.path.clone()).collect();
@@ -180,10 +180,14 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
     check_stylesheets(
         root,
         &html_preserve::stylesheet(&doc, &plan)?,
-        StyleDelivery::INLINE,
+        style,
         limits,
     )?;
     let parsed = stardict_io::open(root, limits)?;
+    ensure(
+        parsed.offset_bits == manifest.offset_bits,
+        "offset width differs from manifest",
+    )?;
     let mut ordered: Vec<&lexicon_core::Entry> = doc.entries.iter().collect();
     ordered.sort_by(|a, b| compare_words(&a.headword, &b.headword).then(a.id.cmp(&b.id)));
     ensure(
@@ -238,7 +242,7 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
             sha256(payload.as_bytes()) == row.rendered_sha256,
             "rendered entry content hash mismatch",
         )?;
-        let replay = html_preserve::render(&doc, expected, &plan)?;
+        let replay = html_preserve::render(&doc, expected, &plan, style)?;
         ensure(
             payload == replay,
             "DICT differs from a replay of source-preserving edits",
@@ -249,7 +253,7 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
         "extra entry provenance rows",
     )?;
     let saved_report: Report = json(root, "report.json", 1024 * 1024)?;
-    let expected_report = report(&doc, &plan, parsed.offset_bits);
+    let expected_report = report(&doc, &plan, parsed.offset_bits, manifest.reader);
     ensure(
         saved_report == expected_report,
         "report is not supported by source and output checks",
