@@ -1,0 +1,38 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.2-alpha.1"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.dependencies]
+srcs-reader = { path = "crates/srcs-reader" }
+srcs-render = { path = "crates/srcs-render" }
+quick-xml = { version = "=0.38.3", features = ["escape-html"] }
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+unicode-normalization = "=0.1.24"
+image = { version = "=0.25.6", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
+
+lexicon-core = { path = "crates/lexicon-core" }
+mobi-reader = { path = "crates/mobi-reader" }
+html-preserve = { path = "crates/html-preserve" }
+stardict-io = { path = "crates/stardict-io" }
+serde = { version = "=1.0.219", features = ["derive"] }
+serde_json = "=1.0.140"
+thiserror = "=2.0.12"
+sha2 = "=0.10.8"
+encoding_rs = "=0.8.35"
+clap = { version = "=4.5.32", features = ["derive"] }
+tempfile = "=3.19.1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+overflow-checks = true

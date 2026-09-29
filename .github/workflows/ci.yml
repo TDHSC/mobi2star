@@ -1,0 +1,32 @@
+name: native-tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain components
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Select stable compiler
+        run: rustup default stable
+      - name: Resolve dependencies and run full native harness
+        run: ./tools/qa.sh
+      - name: Build native release binary
+        run: cargo build -p mobi2star --release --locked
+      - name: Upload native binary after checks
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobi2star-${{ runner.os }}-${{ runner.arch }}
+          path: target/release/mobi2star
+      - name: Retain the resolved dependency lock for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-lock-${{ matrix.os }}
+          path: Cargo.lock

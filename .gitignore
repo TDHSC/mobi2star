@@ -1,0 +1,13 @@
+/target/
+/out/
+*.tmp
+.DS_Store
+/demo/
+/converted/
+
+# Real dictionaries and conversion output are licensed content; never commit them.
+*.mobi
+*.azw
+*.azw3
+*.prc
+!/tests/fixtures/*.mobi

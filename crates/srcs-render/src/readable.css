@@ -1,0 +1,59 @@
+/* mobi2star Collins-readable-v2. Basic CSS shared by MuPDF and web readers.
+   All original text, punctuation, IPA, numbering and source ids are retained. */
+.m2s-readable { margin: 0; padding: 0; font-family: inherit; font-size: 1em; line-height: 1.35; text-align: left; text-indent: 0; overflow-wrap: break-word; word-wrap: break-word; }
+.m2s-readable div { margin: 0; padding: 0; }
+.m2s-readable div, .m2s-readable p, .m2s-readable td { text-align: left; text-indent: 0; line-height: 1.35; }
+.m2s-readable .m2s-record { display: block; margin: 0 0 .7em 0; }
+.m2s-readable .entry, .m2s-readable .entrysect, .m2s-readable .entry-menubox { display: block; margin: .3em 0 .55em 0; padding: 0; text-indent: 0; }
+.m2s-readable .m2s-header { display: block; margin: 0 0 .4em 0; padding: 0; }
+.m2s-readable .m2s-sense { display: block; margin: .5em 0 .2em 0; padding: 0; }
+.m2s-readable .m2s-paragraph { display: block; margin: .18em 0; padding: 0; }
+.m2s-readable .m2s-example { display: block; margin: .28em 0 .28em .75em; padding: 0; }
+.m2s-readable .m2s-runon { display: block; margin: .6em 0 .25em 0; padding: 0; }
+.m2s-readable .m2s-source-break { display: none; }
+.m2s-readable .hw, .m2s-readable .hwn { font-size: 1.18em; font-style: normal; }
+.m2s-readable .hw, .m2s-readable .runon, .m2s-readable .hwtxt, .m2s-readable .headingword { font-weight: bold; }
+.m2s-readable .hwn, .m2s-readable .hwtxtn, .m2s-readable .normal { font-weight: normal; }
+.m2s-readable .runon { font-size: 1.08em; }
+.m2s-readable .hwtxt, .m2s-readable .hwtxtn { font-size: 1em; }
+.m2s-readable .ex { font-style: italic; }
+.m2s-readable small { font-size: .87em; }
+.m2s-readable .sci { font-size: .8em; }
+.m2s-readable sup { font-size: .75em; vertical-align: super; }
+.m2s-readable u { text-decoration: underline; }
+.m2s-readable .st { text-decoration: line-through; }
+.m2s-readable a { text-decoration: underline; }
+.m2s-readable table { margin: .55em 0; border-collapse: collapse; max-width: 100%; text-indent: 0; }
+.m2s-readable td, .m2s-readable th { padding: .25em .4em; vertical-align: top; }
+.m2s-readable .greybox, .m2s-readable .floatbox, .m2s-readable .flush, .m2s-readable .flush-mbox { width: 100%; border: 1px solid; padding: 0; border-spacing: 0; background-color: transparent; }
+.m2s-readable .heading, .m2s-readable .wl-heading { font-weight: bold; background-color: transparent; text-align: left; }
+.m2s-readable .hword { text-align: left; }
+.m2s-readable .headingword { font-size: 1.08em; }
+.m2s-readable .box { display: block; margin: .5em 0; padding: .5em; border: 1px solid; }
+.m2s-readable img { max-width: 100%; height: auto; }
+.m2s-readable .lgimage { height: auto; max-width: 100%; page-break-before: auto; }
+.m2s-readable .boximg { margin: .6em 0; text-align: left; }
+.m2s-readable .center { text-align: center; }
+.m2s-readable h1 { font-size: 1.3em; margin: .4em 0 .6em 0; text-align: left; }
+.m2s-readable h2, .m2s-readable h3 { font-size: 1.15em; margin: .6em 0 .35em 0; text-align: left; }
+.m2s-readable h4, .m2s-readable h5, .m2s-readable h6 { font-size: 1.05em; margin: .5em 0 .3em 0; text-align: left; }
+.m2s-readable .title, .m2s-readable .subtitle { margin: .6em 0; text-align: left; }
+.m2s-readable .hanging { margin: .4em 0 .4em .5em; text-indent: 0; }
+.m2s-readable .copysect, .m2s-readable .copysect2, .m2s-readable .noindent, .m2s-readable .noindent-low { margin: .5em 0; text-indent: 0; }
+.m2s-readable .toc1, .m2s-readable .toc2, .m2s-readable .toc3 { font-size: 1em; margin: .35em 0; text-indent: 0; text-align: left; }
+.m2s-readable .atp_country { font-weight: bold; margin: .7em 0 .2em 0; }
+.m2s-readable .atp_address { margin: 0; }
+.m2s-readable .startnote, .m2s-readable .usage, .m2s-readable .examplenote { margin: .5em 0; text-align: left; }
+.m2s-readable .first, .m2s-readable .general { margin: .3em 0; text-indent: 0; }
+.m2s-readable .toc { margin: 0 0 0 1.2em; padding: 0; }
+.m2s-readable li { margin: .3em 0; }
+.m2s-readable .pagebreak, .m2s-readable .thesbaseentry { page-break-before: auto; page-break-after: auto; }
+
+/* readable v2 adjustments */
+.m2s-readable .m2s-header { display:block;margin:0 0 .16em 0;padding:0; }
+.m2s-readable .m2s-header .m2s-pos { margin-left:.35em;font-size:.88em;font-weight:normal;white-space:nowrap; }
+.m2s-readable .m2s-sense { display:block;margin:.08em 0 .22em 0;padding:0; }
+.m2s-readable .m2s-example { display:block;margin:.22em 0 .35em .95em;padding:0;font-style:italic; }
+.m2s-readable .m2s-example-marker { display: none; }
+.m2s-readable .m2s-runon { display:block;margin:.48em 0 .18em 0;padding:0; }
+.m2s-readable .m2s-runon-marker { display: none; }

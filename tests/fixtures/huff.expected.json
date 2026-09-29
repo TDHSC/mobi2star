@@ -1,0 +1,57 @@
+{
+  "mode": "huff",
+  "source_sha256": "c586289779d0c09a2e130c3124168caebd64fce6cd704e2f4410af4680cadf46",
+  "rawml_sha256": "f1e4926f1f8071ef916f23688ac4c82db90f5a0cc61f003a7b44e336a991bdc4",
+  "rawml": "<html><head><style>.definition{font-weight:normal}</style></head><body><p>前言：本词典用于测试。</p><div id=\"first\" class=\"definition\"><b>run</b><p>第一义项：中文与 café。</p><img recindex=\"1\" alt=\"测试图片\"><a title=\"x > y\" filepos=\"0000000379\">显示文字不同</a></div><div id=\"second\"><b>run</b><p>A separate homograph, never overwritten.</p></div><div id=\"third\"><b>café</b><p>重音不能被归一化丢失。<a href=\"#first\">返回</a></p></div><p>附录：符号说明、版权测试文本。</p></body></html>",
+  "source_headwords": 3,
+  "source_aliases": 1,
+  "rows": [
+    {
+      "id": 0,
+      "headword": "run",
+      "start": 111,
+      "end": 299,
+      "html": "<div id=\"first\" class=\"definition\"><b>run</b><p>第一义项：中文与 café。</p><img recindex=\"1\" alt=\"测试图片\"><a title=\"x > y\" filepos=\"0000000379\">显示文字不同</a></div>",
+      "aliases": [
+        "runs"
+      ]
+    },
+    {
+      "id": 1,
+      "headword": "run",
+      "start": 299,
+      "end": 379,
+      "html": "<div id=\"second\"><b>run</b><p>A separate homograph, never overwritten.</p></div>",
+      "aliases": []
+    },
+    {
+      "id": 2,
+      "headword": "café",
+      "start": 379,
+      "end": 480,
+      "html": "<div id=\"third\"><b>café</b><p>重音不能被归一化丢失。<a href=\"#first\">返回</a></p></div>",
+      "aliases": []
+    },
+    {
+      "id": 3,
+      "headword": "〔原书补充内容 000001〕",
+      "start": 0,
+      "end": 111,
+      "html": "<html><head><style>.definition{font-weight:normal}</style></head><body><p>前言：本词典用于测试。</p>",
+      "aliases": []
+    },
+    {
+      "id": 4,
+      "headword": "〔原书补充内容 000002〕",
+      "start": 480,
+      "end": 546,
+      "html": "<p>附录：符号说明、版权测试文本。</p></body></html>",
+      "aliases": []
+    }
+  ],
+  "image_sha256": "442c192257f98d5921ab1a49970f2a7c5cb501b98df8138c77a7507210f7638a",
+  "link_targets": [
+    379,
+    111
+  ]
+}
