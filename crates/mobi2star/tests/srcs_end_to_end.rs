@@ -39,7 +39,8 @@ fn rust_srcs_conversion_reopens_all_content(){
     assert_eq!(report.source_headwords,3);assert_eq!(report.source_aliases,1);assert_eq!(report.definitions,3);
     assert_eq!(report.chapters,1);assert_eq!(report.source_images,1);assert_eq!(report.compiled_images,1);
     assert_eq!(report.internal_links,2);assert_eq!(report.source_body_bytes,report.covered_source_body_bytes);
-    assert_eq!(report.output_entries,6);assert_eq!(report.output_synonyms,5);
+    // 3 definition routes + 1 inflection + 1 chapter route + 2 exact route#anchor aliases (#third, #first).
+    assert_eq!(report.output_entries,6);assert_eq!(report.output_synonyms,7);
     assert_eq!(report,mobi2star::verify_source(&bundle,Some(&source),&limits).unwrap());
     let disk=stardict_io::open(&bundle.join("StarDict"),&limits).unwrap();
     assert_eq!(disk.lookup("run").len(),2);assert_eq!(disk.lookup("runs").len(),1);assert_eq!(disk.lookup("café").len(),1);
