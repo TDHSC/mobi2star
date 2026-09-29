@@ -24,3 +24,12 @@ jobs:
         with:
           name: mobi2star-${{ runner.os }}-${{ runner.arch }}
           path: target/release/mobi2star
+  msrv:
+    # Keep in sync with rust-version in Cargo.toml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the minimum supported Rust
+        run: rustup toolchain install 1.85 --profile minimal
+      - name: Test on the minimum supported Rust
+        run: cargo +1.85 test --workspace --locked
