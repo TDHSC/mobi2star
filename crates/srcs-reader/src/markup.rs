@@ -43,7 +43,11 @@ pub struct SourceParser;
 impl SourceParser {
     pub fn parse(book: &mut SourceBook, file: &str, raw: &[u8], limits: &Limits, budget: &mut usize) -> Result<Page> {
         utf8(raw)?;
-        let mut reader = Reader::from_reader(raw);
+        // quick-xml skips a UTF-8 BOM and then reports positions relative to the
+        // bytes after it. Parse past the BOM ourselves and add its length back so
+        // every span indexes the original file.
+        let bom = if raw.starts_with(b"\xEF\xBB\xBF") { 3 } else { 0 };
+        let mut reader = Reader::from_reader(&raw[bom..]);
         reader.config_mut().check_end_names = true;
         let mut page = Page { file: file.into(), title: String::new(), body: Span { start: 0, end: 0 },
             body_tag: Span { start: 0, end: 0 }, head_end: 0, entries: Vec::new(), ids: BTreeMap::new(),
@@ -51,9 +55,9 @@ impl SourceParser {
         let mut stack: Vec<Frame> = Vec::new(); let mut roots = 0;
         loop {
             *budget = budget.checked_sub(1).ok_or_else(|| Error::Limit("XML event budget".into()))?;
-            let before = reader.buffer_position() as usize;
+            let before = bom + reader.buffer_position() as usize;
             let event = reader.read_event().map_err(|e| Error::Malformed(format!("{file} at byte {before}: {e}")))?;
-            let after = reader.buffer_position() as usize;
+            let after = bom + reader.buffer_position() as usize;
             match &event {
                 Event::Start(e) | Event::Empty(e) => {
                     let name = utf8(e.name().as_ref())?.to_owned();
