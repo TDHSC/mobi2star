@@ -203,9 +203,8 @@ impl Huff {
             if length == 0 {
                 return Err(Error::Malformed("HUFF zero-length code".into()));
             }
-            let ceiling;
-            if q & 0x80 != 0 {
-                ceiling = ((u64::from(q >> 8) + 1) << (32 - length)) - 1;
+            let ceiling = if q & 0x80 != 0 {
+                ((u64::from(q >> 8) + 1) << (32 - length)) - 1
             } else {
                 while length <= 32 && code < self.min[length] {
                     length += 1;
@@ -213,8 +212,8 @@ impl Huff {
                 if length > 32 {
                     return Err(Error::Malformed("HUFF code outside tables".into()));
                 }
-                ceiling = self.max[length];
-            }
+                self.max[length]
+            };
             // Final incomplete code is padding; total decompressed length is checked by the caller.
             if length > total_bits - position {
                 break;

@@ -155,9 +155,9 @@ impl Index {
                 let tags = decode_tags(row, &mut cursor, control_count, &descriptors)?;
                 // Alignment padding is allowed only after the final row, and only up to 3 NULs.
                 let rest = &row[cursor..];
-                if !rest.is_empty()
-                    && !(n + 1 == count && rest.len() <= 3 && rest.iter().all(|&b| b == 0))
-                {
+                let final_row_padding =
+                    n + 1 == count && rest.len() <= 3 && rest.iter().all(|&b| b == 0);
+                if !(rest.is_empty() || final_row_padding) {
                     return Err(Error::Unsupported(format!(
                         "unparsed bytes in INDX record {record}, row {n}"
                     )));
