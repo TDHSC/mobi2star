@@ -13,8 +13,11 @@ pub const CSS: &str = include_str!("readable.css");
 pub const PROFILE: &str = "collins-readable-v2";
 
 /// Selection is explicit and conservative: arbitrary books keep source layout.
+/// `title` is the OPF title, which in the retail Kindle edition is
+/// "COBUILD Advanced Learner's Dictionary" without "Collins"; the stylesheet
+/// signature is what identifies the publisher's markup.
 pub fn applies(title: &str, stylesheets: &[&str]) -> bool {
-    title.contains("Collins COBUILD")
+    title.contains("COBUILD")
         && stylesheets.iter().any(|css| {
             css.contains("amzn-mobi")
                 && [".hw", ".hwtxt", ".entry", "span.ex"]
@@ -699,6 +702,15 @@ mod tests {
         assert!(applies(
             "Collins COBUILD Advanced Learner’s Dictionary",
             &["amzn-mobi .hw .hwtxt .entry span.ex"]
+        ));
+        // OPF title of the retail Kindle edition: no "Collins", ASCII apostrophe.
+        assert!(applies(
+            "COBUILD Advanced Learner's Dictionary",
+            &["amzn-mobi .hw .hwtxt .entry span.ex"]
+        ));
+        assert!(!applies(
+            "COBUILD Advanced Learner's Dictionary",
+            &["amzn-mobi .hw .entry"]
         ));
     }
     #[test]

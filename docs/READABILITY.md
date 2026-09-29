@@ -8,7 +8,7 @@ Code: `crates/srcs-render/src/readability.rs`. Stylesheet: `crates/srcs-render/s
 
 Selection is deliberately conservative. The profile applies only when both of these hold:
 
-- the book title contains `Collins COBUILD`;
+- the OPF book title contains `COBUILD` (the retail Kindle edition's OPF title is `COBUILD Advanced Learner's Dictionary`, without "Collins");
 - one of its stylesheets contains the publisher's `amzn-mobi` signature together with the `.hw`, `.hwtxt`, `.entry` and `span.ex` selectors.
 
 Every other book keeps the source-scoped adapter. The chosen profile is recorded as `layout_profile` in `report.json`, which is `source` when the profile does not apply.

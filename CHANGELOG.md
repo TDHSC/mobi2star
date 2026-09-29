@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: the Collins COBUILD readability profile never applied to the retail Kindle edition, whose OPF title is "COBUILD Advanced Learner's Dictionary" without "Collins". Those conversions fell back to the source-scoped layout.
+
 ## 0.3.0-alpha.1 — English labels and prebuilt binaries
 
 - Alpha: the automated tests use synthetic fixtures only. Run `mobi2star verify` on each converted dictionary and check it in your reader before relying on it.
