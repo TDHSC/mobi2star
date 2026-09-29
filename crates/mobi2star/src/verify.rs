@@ -48,7 +48,7 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
     }
     let source = read_bounded(&checked_member(root, "archive/source.mobi")?, limits.input_bytes)?;
     ensure(sha256(&source) == manifest.source_sha256, "archived source fingerprint mismatch")?;
-    let doc = mobi_reader::read(source, limits)?;
+    let doc = mobi_reader::read(source, limits, manifest.labels)?;
     ensure(sha256(&doc.rawml) == manifest.rawml_sha256, "redecoded source text fingerprint mismatch")?;
     let archived_raw = read_bounded(&checked_member(root, "archive/rawml.bin")?, limits.text_bytes)?;
     ensure(archived_raw == doc.rawml, "archived RAWML is not exact decompression of the source")?;

@@ -49,18 +49,20 @@ The `compiled` writer is now a thin adapter to these same primitives. The standa
 
 Rebuild verification is intentionally version-specific and reuses the producer's parser/renderer. It detects altered or missing artifacts even when their checksums have been rewritten, while common-mode implementation bugs remain possible. This is why the suite also contains source/compiled comparisons and synthetic adversarial fixtures, and why the report keeps a distinct rendering status.
 
+Text that mobi2star generates itself comes from `lexicon_core::LabelLanguage`. That covers lookup keys for uncovered compiled text, chapters and image galleries, plus the offline viewer UI. Both manifests record the language, and verification regenerates with the recorded value. Changing the recorded language therefore fails verification instead of silently producing different keys. Source text is never translated.
+
 The output budget is enforced while emitting source/audit/browser data and while appending dictionary payloads, with aggregate checks before publication. Peak storage includes the staged bundle plus its verification rebuild; memory limits are per declared domain rather than a hard process RSS ceiling.
 
 ## Library entry points
 
 ```rust
 use std::path::Path;
-use lexicon_core::Limits;
+use lexicon_core::{LabelLanguage, Limits};
 use mobi2star::{Backend, ConversionReport};
 
 fn convert_book(input: &Path, output: &Path) -> lexicon_core::Result<()> {
     let (bundle, report) = mobi2star::convert_with_backend(
-        input, output, &Limits::default(), 32, Backend::Auto,
+        input, output, &Limits::default(), 32, LabelLanguage::En, Backend::Auto,
     )?;
     match report {
         ConversionReport::Source(report) => {

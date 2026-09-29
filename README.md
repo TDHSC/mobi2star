@@ -45,6 +45,10 @@ Every command accepts `--json` for machine-readable output (errors go to stderr)
 
 - `--backend auto|srcs|compiled` selects the backend; the default is `auto`.
 - `--offset-bits 32|64` sets the StarDict offset width. The default of 32 is the most portable; use 64 only if your reader supports it.
+- `--labels en|zh` sets the language of the text that mobi2star generates itself. The default is `en`.
+  - This covers lookup keys for chapters, image galleries and text outside any headword (such as `[Chapter 000001] Preface` or `[Supplement 000001]`), plus the offline viewer's interface.
+  - Dictionary content is never translated.
+  - The choice is recorded in `manifest.json`, so `verify` needs no extra option.
 
 The output directory must not exist yet. `convert` creates it with owner-only permissions (`0700`) and publishes `OUTPUT/bundle` only after every check passes. If any check fails, the staging tree is removed and existing files are left untouched.
 

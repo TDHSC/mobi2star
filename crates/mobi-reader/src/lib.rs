@@ -11,7 +11,7 @@ pub use container::Container;
 
 use header::Header;
 use index::Index;
-use lexicon_core::{Document, Encoding, Entry, EntryKind, Error, Limits, Resource, Result, Span, uncovered, validate_word};
+use lexicon_core::{Document, Encoding, Entry, EntryKind, Error, LabelLanguage, Limits, Resource, Result, Span, uncovered, validate_word};
 use pdb::PalmDatabase;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,7 +34,8 @@ pub fn inspect(source: &[u8]) -> Result<Inspection> {
         note: "Header preflight only, NOT a completeness or conversion guarantee. convert performs the full audit." })
 }
 
-pub fn read(source: Vec<u8>, limits: &Limits) -> Result<Document> {
+/// `labels` sets the language of the lookup keys generated for uncovered text.
+pub fn read(source: Vec<u8>, limits: &Limits, labels: LabelLanguage) -> Result<Document> {
     if source.len() > limits.input_bytes { return Err(Error::Limit("input size".into())); }
     let pdb = PalmDatabase::parse(&source)?;
     let h = Header::parse(pdb.record(&source, 0)?)?;
@@ -89,7 +90,7 @@ pub fn read(source: Vec<u8>, limits: &Limits) -> Result<Document> {
     let source_headwords = entries.len();
     let headwords: BTreeSet<String> = entries.iter().map(|e| e.headword.clone()).collect();
     for (i, span) in uncovered(rawml.len(), entries.iter().map(|e| e.span))?.into_iter().enumerate() {
-        let headword = format!("〔原书补充内容 {:06}〕", i + 1);
+        let headword = labels.supplement_key(i + 1);
         if headwords.contains(&headword) { return Err(Error::Incomplete("supplement key collision".into())); }
         entries.push(Entry { id: entries.len() as u64, headword, aliases: Vec::new(), span, kind: EntryKind::Supplement });
     }

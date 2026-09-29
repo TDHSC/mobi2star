@@ -1,7 +1,7 @@
 //! Deterministic SRCS bundle production. The verifier rebuilds from the archived
 //! MOBI and compares the actual artifacts, in addition to an independent IDX reader.
 use crate::{bundle::{collect_files, write_bytes, write_json}, transaction::{sync_directory, Transaction}, FileDigest};
-use lexicon_core::{checked_member, hash_file, read_bounded, sha256, Error, Limits, Result, Span};
+use lexicon_core::{checked_member, hash_file, read_bounded, sha256, Error, LabelLanguage, Limits, Result, Span};
 use mobi_reader::Container;
 use serde::{Deserialize, Serialize};
 use srcs_reader::{SourceArchive, SourceBook};
@@ -44,7 +44,10 @@ pub struct SourceReport {
 #[serde(deny_unknown_fields)]
 struct SourceManifest {
     schema:u32,backend:String,tool:String,version:String,
-    source_sha256:String,offset_bits:u8,files:Vec<FileDigest>,
+    source_sha256:String,offset_bits:u8,
+    /// Language of generated keys, galleries and viewer text; verification regenerates with it.
+    labels:LabelLanguage,
+    files:Vec<FileDigest>,
 }
 #[derive(Serialize)]
 struct ArticleAudit {
@@ -89,14 +92,15 @@ fn gallery(title:&str,items:&[(String,String)])->Vec<u8>{
     }
     out.into_bytes()
 }
-fn chapter_word(id:usize,title:&str)->String{
+fn chapter_word(id:usize,title:&str,labels:LabelLanguage)->String{
     // A human-readable key stays below StarDict's 256-byte bound. Full title and
     // original filename remain in the chapter, browser and audit metadata.
-    let prefix=format!("〔原书章节 {:06}〕 ",id+1);
+    let prefix=labels.chapter_key_prefix(id+1);
     let mut out=prefix;for ch in title.chars(){if ch.is_control(){continue;}if out.len()+ch.len_utf8()>=250{break;}out.push(ch);}out
 }
 
-fn build(source:&[u8],root:&Path,limits:&Limits,bits:u8)->Result<SourceReport>{
+fn build(source:&[u8],root:&Path,limits:&Limits,bits:u8,labels:LabelLanguage)->Result<SourceReport>{
+    let text=labels.text();
     let mobi=Container::open(source,limits)?;
     let (src_record,archive)=mobi.source_archive()?.ok_or_else(||Error::Unsupported("MOBI has no embedded SRCS source archive".into()))?;
     let book=SourceBook::parse(SourceArchive::read(archive,src_record,limits)?,limits)?;
@@ -145,12 +149,13 @@ fn build(source:&[u8],root:&Path,limits:&Limits,bits:u8)->Result<SourceReport>{
         browser_gallery.push((resource.filename.clone(),format!("compiled/{}",resource.filename)));
     }
     sink.json("Audit/images.json",&image_audit)?;
-    sink.bytes("Browser/index.html",&browser::index(&book,&plan))?;
+    sink.bytes("Browser/index.html",&browser::index(&book,&plan,labels))?;
     sink.bytes("Browser/lookup-data.js",&browser::lookup_data(&book)?)?;
     sink.bytes("Browser/viewer.css",browser::CSS.as_bytes())?;
     sink.bytes("Browser/viewer.js",browser::JS.as_bytes())?;
-    let mut all_images=format!("<!doctype html><html><head><meta charset=\"utf-8\"><title>Dictionary images</title><style>{}</style></head><body class=\"m2s-readable\">",srcs_render::readability::CSS).into_bytes();
-    all_images.extend(gallery("全部原始图片与编译图片",&browser_gallery));all_images.extend_from_slice(b"</body></html>");
+    let mut all_images=format!("<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"><title>{}</title><style>{}</style></head><body class=\"m2s-readable\">",
+        text.html_lang,srcs_render::escape(text.all_images),srcs_render::readability::CSS).into_bytes();
+    all_images.extend(gallery(text.all_images,&browser_gallery));all_images.extend_from_slice(b"</body></html>");
     sink.bytes("Browser/images.html",&all_images)?;
     let dictroot=root.join("StarDict");fs::create_dir_all(&dictroot)?;
     let mut payload_limits=limits.clone();
@@ -182,12 +187,12 @@ fn build(source:&[u8],root:&Path,limits:&Limits,bits:u8)->Result<SourceReport>{
     for (file,&id) in &plan.page_ids{
         let page=&book.pages[file];let rendered=plan.chapter(&book,page)?;let payload=writer.append(&rendered.bytes)?;
         articles.push(article_audit("chapter",id,file,page.body,&book.files[file],&rendered,payload)?);
-        let word=chapter_word(id,&page.title);
+        let word=chapter_word(id,&page.title,labels);
         if source_words.contains(word.as_str()){return Err(Error::Incomplete("chapter key collides with source word".into()));}
         let target_id=(book.orths.len()+id) as u64;
         items.push(CatalogItem{id:target_id,word,payload});aliases.push(CatalogAlias{word:srcs_render::page_route(&namespace,id),target_id});
     }
-    for (i,(title,images)) in [("〔原始源文件图片〕",&source_gallery),("〔MOBI 编译图片〕",&compiled_gallery)].into_iter().enumerate(){
+    for (i,(title,images)) in [(text.source_images,&source_gallery),(text.compiled_images,&compiled_gallery)].into_iter().enumerate(){
         if source_words.contains(title){return Err(Error::Incomplete("gallery key collides with source word".into()));}
         let original_gallery=gallery(title,images);
         let rendered_gallery=if plan.layout_profile==srcs_render::readability::PROFILE {
@@ -256,7 +261,7 @@ fn build(source:&[u8],root:&Path,limits:&Limits,bits:u8)->Result<SourceReport>{
         if total>limits.output_bytes{return Err(Error::Limit("aggregate bundle byte budget".into()));}
         Ok(FileDigest{path,bytes,sha256})
     }).collect::<Result<Vec<_>>>()?;
-    let manifest=SourceManifest{schema:2,backend:"srcs-rust".into(),tool:"mobi2star".into(),version:env!("CARGO_PKG_VERSION").into(),source_sha256:namespace,offset_bits:bits,files};
+    let manifest=SourceManifest{schema:2,backend:"srcs-rust".into(),tool:"mobi2star".into(),version:env!("CARGO_PKG_VERSION").into(),source_sha256:namespace,offset_bits:bits,labels,files};
     let encoded=serde_json::to_vec_pretty(&manifest)?;
     if total.checked_add(encoded.len() as u64+1).is_none_or(|n|n>limits.output_bytes){return Err(Error::Limit("aggregate bundle with manifest".into()));}
     write_json(root,"manifest.json",&manifest)?;
@@ -267,10 +272,10 @@ fn sync_tree(root:&Path)->Result<()>{
     sync_directory(root)
 }
 
-pub fn convert_source(input:&Path,output:&Path,limits:&Limits,bits:u8)->Result<(PathBuf,SourceReport)>{
+pub fn convert_source(input:&Path,output:&Path,limits:&Limits,bits:u8,labels:LabelLanguage)->Result<(PathBuf,SourceReport)>{
     let source=read_bounded(input,limits.input_bytes)?;
     let tx=Transaction::begin(output)?;
-    let report=build(&source,tx.path()?,limits,bits)?;
+    let report=build(&source,tx.path()?,limits,bits,labels)?;
     drop(source);
     let verified=verify_source(tx.path()?,Some(input),limits)?;
     if report!=verified{return Err(Error::Verify("source report changed during staging verification".into()));}
@@ -303,7 +308,7 @@ pub fn verify_source(root:&Path,original:Option<&Path>,limits:&Limits)->Result<S
     let parsed=stardict_io::open(&root.join("StarDict"),limits)?;
     if parsed.offset_bits!=manifest.offset_bits{return Err(Error::Verify("offset profile differs from manifest".into()));}
     let stage=tempfile::Builder::new().prefix("mobi2star-verify-").tempdir()?;
-    let expected=build(&source,stage.path(),limits,manifest.offset_bits)?;
+    let expected=build(&source,stage.path(),limits,manifest.offset_bits,manifest.labels)?;
     let regenerated:SourceManifest=serde_json::from_slice(&read_bounded(&stage.path().join("manifest.json"),16*1024*1024)?)?;
     if manifest.files!=regenerated.files{return Err(Error::Verify("regeneration differs: bundle is not the deterministic source-derived output".into()));}
     let report:SourceReport=serde_json::from_slice(&read_bounded(&checked_member(root,"report.json")?,1024*1024)?)?;

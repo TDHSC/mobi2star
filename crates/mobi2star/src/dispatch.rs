@@ -1,6 +1,6 @@
 //! Backend selection is explicit and fail-closed: an SRCS conversion failure
 //! propagates to the caller, preserving its diagnostics and rollback semantics.
-use lexicon_core::{checked_member,read_bounded,Limits,Result};
+use lexicon_core::{checked_member,read_bounded,LabelLanguage,Limits,Result};
 use std::path::{Path,PathBuf};
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
 pub enum Backend { #[default] Auto, Srcs, Compiled }
@@ -12,7 +12,7 @@ impl ConversionReport {
     pub fn source_aliases(&self)->usize{match self{Self::Source(r)=>r.source_aliases,Self::Compiled(r)=>r.source_aliases}}
     pub fn supplement_entries(&self)->usize{match self{Self::Source(r)=>r.supplement_entries,Self::Compiled(r)=>r.supplement_entries}}
 }
-pub fn convert_with_backend(input:&Path,output:&Path,limits:&Limits,bits:u8,backend:Backend)->Result<(PathBuf,ConversionReport)>{
+pub fn convert_with_backend(input:&Path,output:&Path,limits:&Limits,bits:u8,labels:LabelLanguage,backend:Backend)->Result<(PathBuf,ConversionReport)>{
     let selected=match backend {
         Backend::Auto=>{
             let bytes=read_bounded(input,limits.input_bytes)?;
@@ -22,8 +22,8 @@ pub fn convert_with_backend(input:&Path,output:&Path,limits:&Limits,bits:u8,back
         other=>other,
     };
     match selected {
-        Backend::Srcs=>{let(path,report)=crate::convert_source(input,output,limits,bits)?;Ok((path,ConversionReport::Source(report)))}
-        Backend::Compiled|Backend::Auto=>{let(path,report)=crate::convert(input,output,limits,bits)?;Ok((path,ConversionReport::Compiled(report)))}
+        Backend::Srcs=>{let(path,report)=crate::convert_source(input,output,limits,bits,labels)?;Ok((path,ConversionReport::Source(report)))}
+        Backend::Compiled|Backend::Auto=>{let(path,report)=crate::convert(input,output,limits,bits,labels)?;Ok((path,ConversionReport::Compiled(report)))}
     }
 }
 pub fn verify_bundle(root:&Path,source:Option<&Path>,limits:&Limits)->Result<ConversionReport>{

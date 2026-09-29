@@ -3,8 +3,10 @@
 #![forbid(unsafe_code)]
 
 pub mod bytes;
+pub mod labels;
 pub mod model;
 pub mod safety;
+pub use labels::*;
 pub use model::*;
 pub use safety::*;
 

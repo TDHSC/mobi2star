@@ -21,6 +21,8 @@ struct Cli {
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum BackendArg { Auto, Srcs, Compiled }
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum LabelsArg { En, Zh }
 #[derive(Subcommand)]
 enum Command {
     /// Read the container/header only. Passing preflight is NOT a conversion guarantee.
@@ -33,6 +35,8 @@ enum Command {
         backend: BackendArg,
         #[arg(long, default_value_t = 32, help = "32 (portable default) or 64 (reader support required)")]
         offset_bits: u8,
+        #[arg(long, value_enum, default_value_t = LabelsArg::En, help = "Language of generated chapter/supplement/gallery keys and offline viewer text")]
+        labels: LabelsArg,
     },
     /// Verify source identity, coverage, actual StarDict records, links, resources and provenance.
     Verify {
@@ -75,9 +79,10 @@ fn run(cli: &Cli) -> Result<()> {
                 if let Some(reason)=issue{writeln!(out,"Format error: {reason}")?;}
             }
         }
-        Command::Convert { input, output, offset_bits, backend } => {
+        Command::Convert { input, output, offset_bits, backend, labels } => {
             let selected=match backend {BackendArg::Auto=>mobi2star::Backend::Auto, BackendArg::Srcs=>mobi2star::Backend::Srcs, BackendArg::Compiled=>mobi2star::Backend::Compiled};
-            let (bundle, report) = mobi2star::convert_with_backend(input, output, &limits, *offset_bits, selected)?;
+            let labels=match labels {LabelsArg::En=>lexicon_core::LabelLanguage::En, LabelsArg::Zh=>lexicon_core::LabelLanguage::Zh};
+            let (bundle, report) = mobi2star::convert_with_backend(input, output, &limits, *offset_bits, labels, selected)?;
             if cli.json { stdout_json(&serde_json::json!({"bundle": bundle, "report": report}))?; }
             else {
                 writeln!(io::stdout().lock(), "Bundle: {}\nImplemented content checks: PASS\nHeadwords: {}, explicit aliases: {}, supplement entries: {}\nRendering: UNVERIFIED — acceptance-test in your reader.", bundle.display(), report.source_headwords(), report.source_aliases(), report.supplement_entries())?;

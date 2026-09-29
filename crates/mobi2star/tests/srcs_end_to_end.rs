@@ -1,6 +1,6 @@
 //! Fixtures are produced entirely in Rust from this project's original synthetic
 //! MOBI. No publisher content or external interpreter is needed by this suite.
-use lexicon_core::{Limits,sha256};
+use lexicon_core::{LabelLanguage,Limits,sha256};
 use mobi_reader::{Container,pdb::PalmDatabase};
 use std::{fs,io::{Cursor,Write},path::Path};
 use zip::{ZipWriter,write::SimpleFileOptions};
@@ -35,7 +35,7 @@ fn write_source(root:&Path,page:&str)->std::path::PathBuf{let path=root.join("or
 #[test]
 fn rust_srcs_conversion_reopens_all_content(){
     let dir=tempfile::tempdir().unwrap();let source=write_source(dir.path(),PAGE);let limits=Limits::default();
-    let (bundle,report)=mobi2star::convert_source(&source,&dir.path().join("converted"),&limits,32).unwrap();
+    let (bundle,report)=mobi2star::convert_source(&source,&dir.path().join("converted"),&limits,32,LabelLanguage::En).unwrap();
     assert_eq!(report.source_headwords,3);assert_eq!(report.source_aliases,1);assert_eq!(report.definitions,3);
     assert_eq!(report.chapters,1);assert_eq!(report.source_images,1);assert_eq!(report.compiled_images,1);
     assert_eq!(report.internal_links,2);assert_eq!(report.source_body_bytes,report.covered_source_body_bytes);
@@ -50,30 +50,51 @@ fn rust_srcs_conversion_reopens_all_content(){
 #[test]
 fn auto_dispatch_uses_srcs_and_lookup_accepts_bundle_root(){
     let dir=tempfile::tempdir().unwrap();let source=write_source(dir.path(),PAGE);let limits=Limits::default();
-    let (bundle,report)=mobi2star::convert_with_backend(&source,&dir.path().join("out"),&limits,64,mobi2star::Backend::Auto).unwrap();
+    let (bundle,report)=mobi2star::convert_with_backend(&source,&dir.path().join("out"),&limits,64,LabelLanguage::En,mobi2star::Backend::Auto).unwrap();
     let report=serde_json::to_value(report).unwrap();
     assert_eq!(report["backend"],"srcs-rust");assert_eq!(report["offset_bits"],64);
     let disk=stardict_io::open(&mobi2star::dictionary_root(&bundle),&limits).unwrap();assert_eq!(disk.offset_bits,64);
 }
 #[test]
+fn generated_labels_default_to_english_and_chinese_is_opt_in(){
+    let dir=tempfile::tempdir().unwrap();let source=write_source(dir.path(),PAGE);let limits=Limits::default();
+    let (bundle,_)=mobi2star::convert_source(&source,&dir.path().join("en"),&limits,32,LabelLanguage::En).unwrap();
+    let disk=stardict_io::open(&bundle.join("StarDict"),&limits).unwrap();
+    for key in ["[Chapter 000001] Original synthetic fixture","[Source images]","[Compiled MOBI images]"]{assert_eq!(disk.lookup(key).len(),1,"{key}");}
+    let index=fs::read_to_string(bundle.join("Browser/index.html")).unwrap();
+    assert!(index.contains("<html lang=\"en\">")&&index.contains("data-found=\"Definitions found: {n}\""));
+    assert!(!index.chars().any(|c|('\u{3000}'..='\u{9fff}').contains(&c)),"English viewer has no generated CJK text");
+    assert!(fs::read_to_string(bundle.join("Browser/images.html")).unwrap().contains("<title>All source and compiled images</title>"));
+    let (bundle,_)=mobi2star::convert_source(&source,&dir.path().join("zh"),&limits,32,LabelLanguage::Zh).unwrap();
+    let disk=stardict_io::open(&bundle.join("StarDict"),&limits).unwrap();
+    for key in ["〔原书章节 000001〕 Original synthetic fixture","〔原始源文件图片〕","〔MOBI 编译图片〕"]{assert_eq!(disk.lookup(key).len(),1,"{key}");}
+    assert!(fs::read_to_string(bundle.join("Browser/index.html")).unwrap().contains("<html lang=\"zh-CN\">"));
+    // Verification regenerates with the language recorded in the manifest.
+    mobi2star::verify_source(&bundle,Some(&source),&limits).unwrap();
+    let mpath=bundle.join("manifest.json");let mut manifest:serde_json::Value=serde_json::from_slice(&fs::read(&mpath).unwrap()).unwrap();
+    assert_eq!(manifest["labels"],"zh");manifest["labels"]="en".into();
+    fs::write(mpath,serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    assert!(mobi2star::verify_source(&bundle,None,&limits).is_err());
+}
+#[test]
 fn source_compiled_mismatch_rolls_back(){
     let dir=tempfile::tempdir().unwrap();let source=write_source(dir.path(),&PAGE.replace("第一义项","changed definition"));let out=dir.path().join("out");
-    assert!(mobi2star::convert_source(&source,&out,&Limits::default(),32).is_err());assert!(!out.exists());assert!(source.exists());
+    assert!(mobi2star::convert_source(&source,&out,&Limits::default(),32,LabelLanguage::En).is_err());assert!(!out.exists());assert!(source.exists());
 }
 #[test]
 fn source_inflection_mismatch_is_an_error(){
     let dir=tempfile::tempdir().unwrap();let source=write_source(dir.path(),&PAGE.replace("value=\"runs\"","value=\"running\""));
-    assert!(mobi2star::convert_source(&source,&dir.path().join("out"),&Limits::default(),32).is_err());
+    assert!(mobi2star::convert_source(&source,&dir.path().join("out"),&Limits::default(),32,LabelLanguage::En).is_err());
 }
 #[test]
 fn missing_anchor_is_an_error(){
     let dir=tempfile::tempdir().unwrap();let source=write_source(dir.path(),&PAGE.replace("href=\"#third\"","href=\"#absent\""));
-    assert!(mobi2star::convert_source(&source,&dir.path().join("out"),&Limits::default(),32).is_err());
+    assert!(mobi2star::convert_source(&source,&dir.path().join("out"),&Limits::default(),32,LabelLanguage::En).is_err());
 }
 #[test]
 fn changed_payload_with_rehashed_manifest_fails_regeneration(){
     let dir=tempfile::tempdir().unwrap();let source=write_source(dir.path(),PAGE);let limits=Limits::default();
-    let (bundle,_)=mobi2star::convert_source(&source,&dir.path().join("out"),&limits,32).unwrap();
+    let (bundle,_)=mobi2star::convert_source(&source,&dir.path().join("out"),&limits,32,LabelLanguage::En).unwrap();
     let path=bundle.join("StarDict/dictionary.dict");let mut bytes=fs::read(&path).unwrap();
     let at=bytes.windows(3).position(|w|w==b"run").unwrap();bytes[at]=b'f';fs::write(path,&bytes).unwrap();
     let mpath=bundle.join("manifest.json");let mut manifest:serde_json::Value=serde_json::from_slice(&fs::read(&mpath).unwrap()).unwrap();
@@ -84,7 +105,7 @@ fn changed_payload_with_rehashed_manifest_fails_regeneration(){
 #[test]
 fn extra_file_and_wrong_original_fail(){
     let dir=tempfile::tempdir().unwrap();let source=write_source(dir.path(),PAGE);let limits=Limits::default();
-    let (bundle,_)=mobi2star::convert_source(&source,&dir.path().join("out"),&limits,32).unwrap();
+    let (bundle,_)=mobi2star::convert_source(&source,&dir.path().join("out"),&limits,32,LabelLanguage::En).unwrap();
     let wrong=dir.path().join("wrong.mobi");fs::write(&wrong,BASE).unwrap();assert!(mobi2star::verify_source(&bundle,Some(&wrong),&limits).is_err());
     fs::write(bundle.join("unexpected"),b"extra").unwrap();assert!(mobi2star::verify_source(&bundle,None,&limits).is_err());
 }

@@ -1,6 +1,6 @@
 use crate::transaction::{sync_directory, Transaction};
 use html_preserve::Plan;
-use lexicon_core::{hash_file, read_bounded, sha256, EntryKind, Error, Limits, Result, Span};
+use lexicon_core::{hash_file, read_bounded, sha256, EntryKind, Error, LabelLanguage, Limits, Result, Span};
 use serde::{Deserialize, Serialize};
 use std::{fs::{self, OpenOptions}, io::{BufWriter, Write}, path::{Path, PathBuf}};
 
@@ -14,6 +14,8 @@ pub struct Manifest {
     pub version: String,
     pub source_sha256: String,
     pub rawml_sha256: String,
+    /// Language of generated lookup keys; verification regenerates with it.
+    pub labels: LabelLanguage,
     pub files: Vec<FileDigest>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -92,9 +94,9 @@ pub(crate) fn report(doc: &lexicon_core::Document, plan: &Plan, offset_bits: u8)
 }
 
 /// Return the final bundle path only after the verifier has reopened the staged files.
-pub fn convert(input: &Path, output: &Path, limits: &Limits, offset_bits: u8) -> Result<(PathBuf, Report)> {
+pub fn convert(input: &Path, output: &Path, limits: &Limits, offset_bits: u8, labels: LabelLanguage) -> Result<(PathBuf, Report)> {
     let source = read_bounded(input, limits.input_bytes)?;
-    let document = mobi_reader::read(source, limits)?;
+    let document = mobi_reader::read(source, limits, labels)?;
     let plan = html_preserve::build(&document, limits)?;
     let tx = Transaction::begin(output)?;
     let root = tx.path()?;
@@ -130,7 +132,7 @@ pub fn convert(input: &Path, output: &Path, limits: &Limits, offset_bits: u8) ->
         Ok(FileDigest { path, bytes, sha256 })
     }).collect::<Result<Vec<_>>>()?;
     let manifest = Manifest { schema: 1, tool: "mobi2star".into(), version: env!("CARGO_PKG_VERSION").into(),
-        source_sha256: sha256(&document.source), rawml_sha256: sha256(&document.rawml), files };
+        source_sha256: sha256(&document.source), rawml_sha256: sha256(&document.rawml), labels, files };
     write_json(root, "manifest.json", &manifest)?;
     sync_directory(&root.join("res"))?;
     sync_directory(&root.join("archive"))?;

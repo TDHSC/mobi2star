@@ -1,6 +1,6 @@
 //! Static offline viewer. Conversion emits bytes; it starts no browser/server.
 use crate::{Plan,escape,browser_path,browser_anchor};
-use lexicon_core::Result;
+use lexicon_core::{LabelLanguage,Result};
 use srcs_reader::{SourceBook,uri::percent_encode};
 
 pub fn lookup_data(book:&SourceBook)->Result<Vec<u8>>{
@@ -14,12 +14,15 @@ pub fn lookup_data(book:&SourceBook)->Result<Vec<u8>>{
     let json=serde_json::to_string(&rows)?.replace('<',"\\u003c").replace('\u{2028}',"\\u2028").replace('\u{2029}',"\\u2029");
     Ok(format!("window.MOBI2STAR_LOOKUP={json};\n").into_bytes())
 }
-pub fn index(book:&SourceBook,plan:&Plan)->Vec<u8>{
-    let title=escape(&book.package.title);let mut nav=String::new();
+pub fn index(book:&SourceBook,plan:&Plan,labels:LabelLanguage)->Vec<u8>{
+    let text=labels.text();let title=escape(&book.package.title);let mut nav=String::new();
     let mut paths=book.package.spine.clone();
     for path in plan.page_ids.keys(){if !paths.contains(path){paths.push(path.clone());}}
     for path in paths{let page=&book.pages[&path];nav.push_str(&format!("<a href=\"{}\">{}</a> ",escape(&percent_encode(&browser_path(&path),true)),escape(&page.title)));}
-    format!(r#"<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><link rel="stylesheet" href="viewer.css"></head><body><h1>{title}</h1><p>本地离线词典 · 完整章节 · 显式词形</p><form id="search"><label for="word">单词或词形</label><input id="word" autocomplete="off" required><button>查询</button></form><p id="status" aria-live="polite"></p><section id="results"></section><h2>原书目录</h2><nav>{nav}</nav><p><a href="images.html">全部原始图片与编译图片</a></p><script src="lookup-data.js"></script><script src="viewer.js"></script></body></html>"#).into_bytes()
+    let (lang,tagline,label,button,contents,images,found,not_found)=(escape(text.html_lang),escape(text.viewer_tagline),escape(text.viewer_search_label),
+        escape(text.viewer_search_button),escape(text.viewer_contents),escape(text.all_images),escape(text.viewer_found),escape(text.viewer_not_found));
+    // viewer.js is language-independent; it reads its status messages from data attributes.
+    format!(r#"<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><link rel="stylesheet" href="viewer.css"></head><body><h1>{title}</h1><p>{tagline}</p><form id="search"><label for="word">{label}</label><input id="word" autocomplete="off" required><button>{button}</button></form><p id="status" aria-live="polite" data-found="{found}" data-not-found="{not_found}"></p><section id="results"></section><h2>{contents}</h2><nav>{nav}</nav><p><a href="images.html">{images}</a></p><script src="lookup-data.js"></script><script src="viewer.js"></script></body></html>"#).into_bytes()
 }
 pub const CSS:&str="body{font-family:system-ui,sans-serif;max-width:65rem;margin:2rem auto;padding:0 1rem;line-height:1.6}input,button{font:inherit;padding:.6rem}label{display:block}#results a{display:block;padding:.25rem}nav{display:flex;flex-wrap:wrap;gap:.6rem}";
 pub const JS:&str=r#"'use strict';
@@ -42,6 +45,7 @@ document.getElementById('search').addEventListener('submit',event=>{
     const link=document.createElement('a');link.href=row[1];
     link.textContent=row[0]===row[2]?row[2]:row[0]+' → '+row[2];box.appendChild(link);
   }
-  document.getElementById('status').textContent=seen.size?'找到 '+seen.size+' 个释义块':'未找到精确匹配，可按原书目录浏览。';
+  const status=document.getElementById('status');
+  status.textContent=seen.size?status.dataset.found.replace('{n}',seen.size):status.dataset.notFound;
 });
 "#;

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Generated labels are now English by default: lookup keys for chapters, uncovered text and image galleries, and the offline viewer interface. `convert --labels zh` restores the previous Chinese labels. The language is recorded in `manifest.json`, and verification regenerates with it.
+
 ## 0.2.2-alpha.1 — Collins readability profile v2
 
 - Headword-level part-of-speech labels now join the headword line. Numbered senses and grammar groups keep their own labels.
