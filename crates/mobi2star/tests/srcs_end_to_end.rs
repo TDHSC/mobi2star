@@ -195,6 +195,32 @@ fn generated_labels_default_to_english_and_chinese_is_opt_in() {
     assert!(mobi2star::verify_source(&bundle, None, &limits).is_err());
 }
 #[test]
+fn source_profile_books_get_their_scoped_stylesheet_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = write_source(dir.path(), PAGE);
+    let limits = Limits::default();
+    let (bundle, report) = mobi2star::convert_source(
+        &source,
+        &dir.path().join("out"),
+        &limits,
+        OutputOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(report.layout_profile, "source");
+    let css = fs::read_to_string(bundle.join("StarDict/dictionary.css")).unwrap();
+    assert!(
+        css.starts_with(".m2s_")
+            && css.contains("font-family:serif")
+            && css.contains("font-weight:normal")
+    );
+    // One stylesheet set: the file is exactly what each payload inlines.
+    let disk = stardict_io::open(&bundle.join("StarDict"), &limits).unwrap();
+    let mut dict = fs::File::open(&disk.dictionary_path).unwrap();
+    let run = &disk.entries[disk.lookup("run")[0]];
+    let html = stardict_io::read_payload(&mut dict, run, limits.entry_bytes).unwrap();
+    assert!(html.starts_with(&format!("<style>{css}</style>")));
+}
+#[test]
 fn source_compiled_mismatch_rolls_back() {
     let dir = tempfile::tempdir().unwrap();
     let source = write_source(dir.path(), &PAGE.replace("第一义项", "changed definition"));

@@ -4,6 +4,7 @@ use crate::{
 };
 use lexicon_core::{
     checked_member, hash_file, read_bounded, sha256, Error, Limits, Metadata, Resource, Result,
+    StyleDelivery,
 };
 use serde::de::DeserializeOwned;
 use stardict_io::{compare_synonyms, compare_words, Synonym, WrittenEntry};
@@ -19,6 +20,26 @@ fn json<T: DeserializeOwned>(root: &Path, name: &str, cap: usize) -> Result<T> {
         &checked_member(root, name)?,
         cap,
     )?)?)
+}
+/// Each possible stylesheet path must hold exactly the source-derived CSS
+/// when the delivery calls for it, and must be absent otherwise.
+fn check_stylesheets(root: &Path, css: &str, style: StyleDelivery, limits: &Limits) -> Result<()> {
+    let expected: BTreeMap<String, &[u8]> = stardict_io::stylesheet_files(css, style)
+        .into_iter()
+        .collect();
+    for path in stardict_io::stylesheet_paths() {
+        match expected.get(&path) {
+            Some(bytes) => ensure(
+                read_bounded(&checked_member(root, &path)?, limits.text_bytes)? == *bytes,
+                &format!("{path} is not the source-derived stylesheet"),
+            )?,
+            None => ensure(
+                !root.join(&path).exists(),
+                &format!("unexpected stylesheet {path}"),
+            )?,
+        }
+    }
+    Ok(())
 }
 fn ensure(condition: bool, message: &str) -> Result<()> {
     if condition {
@@ -155,6 +176,12 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
     ensure(
         plan == saved_plan,
         "HTML edit/link plan differs from source-derived plan",
+    )?;
+    check_stylesheets(
+        root,
+        &html_preserve::stylesheet(&doc, &plan)?,
+        StyleDelivery::INLINE,
+        limits,
     )?;
     let parsed = stardict_io::open(root, limits)?;
     let mut ordered: Vec<&lexicon_core::Entry> = doc.entries.iter().collect();

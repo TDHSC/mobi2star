@@ -5,6 +5,7 @@ use crate::{
 use html_preserve::Plan;
 use lexicon_core::{
     hash_file, read_bounded, sha256, EntryKind, Error, LabelLanguage, Limits, Result, Span,
+    StyleDelivery,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -145,6 +146,12 @@ pub fn convert(
     let root = tx.path()?;
     fs::create_dir(root.join("archive"))?;
     fs::create_dir(root.join("res"))?;
+    // Every payload still carries its own copy of the source <style> elements.
+    let style = StyleDelivery::INLINE;
+    let css = html_preserve::stylesheet(&document, &plan)?;
+    for (path, bytes) in stardict_io::stylesheet_files(&css, style) {
+        write_bytes(root, &path, bytes)?;
+    }
     let written = stardict_io::write(root, &document, limits, offset_bits, |entry| {
         html_preserve::render(&document, entry, &plan)
     })?;

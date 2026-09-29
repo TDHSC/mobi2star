@@ -208,11 +208,8 @@ fn build(
     let plan = Plan::build(&book, &namespace)?;
     let resources = mobi.resources()?;
     let mut sink = Sink::new(root, limits);
-    if plan.layout_profile == srcs_render::readability::PROFILE {
-        sink.bytes(
-            "StarDict/dictionary.css",
-            srcs_render::readability::CSS.as_bytes(),
-        )?;
+    for (path, bytes) in stardict_io::stylesheet_files(&plan.stylesheet(), style) {
+        sink.bytes(&format!("StarDict/{path}"), bytes)?;
     }
     sink.bytes("Audit/original.mobi", source)?;
     sink.bytes("Audit/embedded-source.zip", archive)?;

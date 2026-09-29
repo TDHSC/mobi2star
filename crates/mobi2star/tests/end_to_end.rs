@@ -1,5 +1,5 @@
 //! Synthetic-only acceptance tests. A passing suite is not a real-dictionary certification.
-use lexicon_core::{Error, LabelLanguage, Limits};
+use lexicon_core::{sha256, Error, LabelLanguage, Limits};
 use mobi2star::OutputOptions;
 use std::{fs, path::Path};
 
@@ -112,6 +112,40 @@ fn changed_label_language_in_manifest_fails_verification() {
     assert_eq!(manifest["labels"], "en");
     manifest["labels"] = "zh".into();
     fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    assert!(mobi2star::verify(&bundle, None, &Limits::default()).is_err());
+}
+/// Replaces a bundle file and updates its manifest digest, so only
+/// source-derived checks can catch the change.
+fn rewrite_with_digest(bundle: &Path, name: &str, bytes: &[u8]) {
+    fs::write(bundle.join(name), bytes).unwrap();
+    let path = bundle.join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    for file in manifest["files"].as_array_mut().unwrap() {
+        if file["path"] == name {
+            file["bytes"] = bytes.len().into();
+            file["sha256"] = sha256(bytes).into();
+        }
+    }
+    fs::write(path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+}
+#[test]
+fn stylesheet_file_holds_the_source_style_bodies() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = input(dir.path(), PLAIN);
+    let (bundle, _) = mobi2star::convert(
+        &source,
+        &dir.path().join("out"),
+        &Limits::default(),
+        OutputOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read_to_string(bundle.join("dictionary.css")).unwrap(),
+        ".definition{font-weight:normal}\n"
+    );
+    assert!(!bundle.join("res/dictionary.css").exists());
+    rewrite_with_digest(&bundle, "dictionary.css", b".definition{color:red}\n");
     assert!(mobi2star::verify(&bundle, None, &Limits::default()).is_err());
 }
 #[test]

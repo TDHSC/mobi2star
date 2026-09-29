@@ -3,12 +3,14 @@
 #![forbid(unsafe_code)]
 mod catalog;
 mod reader;
+mod style;
 mod writer;
 pub use catalog::{write_catalog, Catalog, CatalogAlias, CatalogItem, Payload, PayloadWriter};
 use lexicon_core::{Error, Result};
 pub use reader::{open, read_payload, ParsedDictionary};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+pub use style::{stylesheet_files, stylesheet_paths};
 pub use writer::{write, WrittenDictionary, WrittenEntry};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
