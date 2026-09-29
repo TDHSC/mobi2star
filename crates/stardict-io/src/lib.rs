@@ -1,23 +1,32 @@
 //! StarDict writer and separately implemented structural reader.
 //! Sorting is bytewise ASCII-folded, then bytewise original, never Unicode folding.
 #![forbid(unsafe_code)]
+mod catalog;
 mod reader;
 mod writer;
-mod catalog;
-pub use catalog::{Catalog, CatalogItem, CatalogAlias, Payload, PayloadWriter, write_catalog};
-pub use reader::{open, read_payload, ParsedDictionary};
-pub use writer::{write, WrittenEntry, WrittenDictionary};
+pub use catalog::{write_catalog, Catalog, CatalogAlias, CatalogItem, Payload, PayloadWriter};
 use lexicon_core::{Error, Result};
+pub use reader::{open, read_payload, ParsedDictionary};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+pub use writer::{write, WrittenDictionary, WrittenEntry};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct IndexEntry { pub word: String, pub offset: u64, pub size: u32 }
+pub struct IndexEntry {
+    pub word: String,
+    pub offset: u64,
+    pub size: u32,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Synonym { pub word: String, pub target: u32 }
+pub struct Synonym {
+    pub word: String,
+    pub target: u32,
+}
 
 pub fn compare_words(a: &str, b: &str) -> Ordering {
-    a.bytes().map(|x| x.to_ascii_lowercase()).cmp(b.bytes().map(|x| x.to_ascii_lowercase()))
+    a.bytes()
+        .map(|x| x.to_ascii_lowercase())
+        .cmp(b.bytes().map(|x| x.to_ascii_lowercase()))
         .then_with(|| a.as_bytes().cmp(b.as_bytes()))
 }
 pub fn compare_synonyms(a: &Synonym, b: &Synonym) -> Ordering {
@@ -40,8 +49,14 @@ mod tests {
     }
     #[test]
     fn distinct_homographs_survive() {
-        let a = Synonym { word: "axes".into(), target: 0 };
-        let b = Synonym { word: "axes".into(), target: 1 };
+        let a = Synonym {
+            word: "axes".into(),
+            target: 0,
+        };
+        let b = Synonym {
+            word: "axes".into(),
+            target: 1,
+        };
         assert_eq!(compare_synonyms(&a, &b), Ordering::Less);
     }
 }

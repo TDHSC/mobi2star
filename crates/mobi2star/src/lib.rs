@@ -6,7 +6,9 @@ mod verify;
 pub use bundle::{convert, FileDigest, Manifest, Report};
 pub use verify::verify;
 
-mod source_bundle;
 mod dispatch;
-pub use source_bundle::{convert_source,verify_source,SourceReport};
-pub use dispatch::{Backend,ConversionReport,convert_with_backend,verify_bundle,dictionary_root};
+mod source_bundle;
+pub use dispatch::{
+    convert_with_backend, dictionary_root, verify_bundle, Backend, ConversionReport,
+};
+pub use source_bundle::{convert_source, verify_source, SourceReport};

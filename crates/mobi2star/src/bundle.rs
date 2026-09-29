@@ -1,11 +1,21 @@
 use crate::transaction::{sync_directory, Transaction};
 use html_preserve::Plan;
-use lexicon_core::{hash_file, read_bounded, sha256, EntryKind, Error, LabelLanguage, Limits, Result, Span};
+use lexicon_core::{
+    hash_file, read_bounded, sha256, EntryKind, Error, LabelLanguage, Limits, Result, Span,
+};
 use serde::{Deserialize, Serialize};
-use std::{fs::{self, OpenOptions}, io::{BufWriter, Write}, path::{Path, PathBuf}};
+use std::{
+    fs::{self, OpenOptions},
+    io::{BufWriter, Write},
+    path::{Path, PathBuf},
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FileDigest { pub path: String, pub bytes: u64, pub sha256: String }
+pub struct FileDigest {
+    pub path: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
@@ -40,10 +50,17 @@ pub struct Report {
     pub notes: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct RecordAudit { pub number: usize, pub span: Span, pub sha256: String }
+pub(crate) struct RecordAudit {
+    pub number: usize,
+    pub span: Span,
+    pub sha256: String,
+}
 
 pub(crate) fn write_bytes(root: &Path, name: &str, bytes: &[u8]) -> Result<()> {
-    let mut file = OpenOptions::new().write(true).create_new(true).open(root.join(name))?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(root.join(name))?;
     file.write_all(bytes)?;
     file.sync_all()?;
     Ok(())
@@ -58,15 +75,29 @@ pub(crate) fn collect_files(root: &Path) -> Result<Vec<String>> {
         for entry in fs::read_dir(at)? {
             let entry = entry?;
             let typ = entry.file_type()?;
-            if typ.is_symlink() { return Err(Error::Verify("symlink in bundle tree".into())); }
-            if typ.is_dir() { visit(root, &entry.path(), result)?; }
-            else if typ.is_file() {
+            if typ.is_symlink() {
+                return Err(Error::Verify("symlink in bundle tree".into()));
+            }
+            if typ.is_dir() {
+                visit(root, &entry.path(), result)?;
+            } else if typ.is_file() {
                 let path = entry.path();
-                let relative = path.strip_prefix(root).map_err(|_| Error::Verify("bundle path escaped".into()))?;
-                let name = relative.to_str().ok_or_else(|| Error::Verify("non-UTF8 bundle member name".into()))?.replace('\\', "/");
-                if name != "manifest.json" { result.push(name); }
-                if result.len() > 131072 { return Err(Error::Limit("bundle file count".into())); }
-            } else { return Err(Error::Verify("nonregular bundle member".into())); }
+                let relative = path
+                    .strip_prefix(root)
+                    .map_err(|_| Error::Verify("bundle path escaped".into()))?;
+                let name = relative
+                    .to_str()
+                    .ok_or_else(|| Error::Verify("non-UTF8 bundle member name".into()))?
+                    .replace('\\', "/");
+                if name != "manifest.json" {
+                    result.push(name);
+                }
+                if result.len() > 131072 {
+                    return Err(Error::Limit("bundle file count".into()));
+                }
+            } else {
+                return Err(Error::Verify("nonregular bundle member".into()));
+            }
         }
         Ok(())
     }
@@ -94,7 +125,13 @@ pub(crate) fn report(doc: &lexicon_core::Document, plan: &Plan, offset_bits: u8)
 }
 
 /// Return the final bundle path only after the verifier has reopened the staged files.
-pub fn convert(input: &Path, output: &Path, limits: &Limits, offset_bits: u8, labels: LabelLanguage) -> Result<(PathBuf, Report)> {
+pub fn convert(
+    input: &Path,
+    output: &Path,
+    limits: &Limits,
+    offset_bits: u8,
+    labels: LabelLanguage,
+) -> Result<(PathBuf, Report)> {
     let source = read_bounded(input, limits.input_bytes)?;
     let document = mobi_reader::read(source, limits, labels)?;
     let plan = html_preserve::build(&document, limits)?;
@@ -102,21 +139,39 @@ pub fn convert(input: &Path, output: &Path, limits: &Limits, offset_bits: u8, la
     let root = tx.path()?;
     fs::create_dir(root.join("archive"))?;
     fs::create_dir(root.join("res"))?;
-    let written = stardict_io::write(root, &document, limits, offset_bits, |entry| html_preserve::render(&document, entry, &plan))?;
+    let written = stardict_io::write(root, &document, limits, offset_bits, |entry| {
+        html_preserve::render(&document, entry, &plan)
+    })?;
     write_bytes(root, "archive/source.mobi", &document.source)?;
     write_bytes(root, "archive/rawml.bin", &document.rawml)?;
     write_json(root, "archive/metadata.json", &document.metadata)?;
     write_json(root, "archive/indexes.json", &document.index_audit)?;
-    let records: Vec<RecordAudit> = document.records.iter().enumerate().map(|(number, &span)| {
-        Ok(RecordAudit { number, span, sha256: sha256(span.bytes(&document.source)?) })
-    }).collect::<Result<_>>()?;
+    let records: Vec<RecordAudit> = document
+        .records
+        .iter()
+        .enumerate()
+        .map(|(number, &span)| {
+            Ok(RecordAudit {
+                number,
+                span,
+                sha256: sha256(span.bytes(&document.source)?),
+            })
+        })
+        .collect::<Result<_>>()?;
     write_json(root, "archive/records.json", &records)?;
     write_json(root, "resources.json", &document.resources)?;
     write_json(root, "edits.json", &plan)?;
     for resource in &document.resources {
-        write_bytes(root, &format!("res/{}", resource.filename), resource.source_span.bytes(&document.source)?)?;
+        write_bytes(
+            root,
+            &format!("res/{}", resource.filename),
+            resource.source_span.bytes(&document.source)?,
+        )?;
     }
-    let file = OpenOptions::new().write(true).create_new(true).open(root.join("entries.jsonl"))?;
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(root.join("entries.jsonl"))?;
     let mut entries = BufWriter::new(file);
     for row in &written.entries {
         serde_json::to_writer(&mut entries, row)?;
@@ -127,12 +182,26 @@ pub fn convert(input: &Path, output: &Path, limits: &Limits, offset_bits: u8, la
     drop(entries);
     let report = report(&document, &plan, offset_bits);
     write_json(root, "report.json", &report)?;
-    let files = collect_files(root)?.into_iter().map(|path| {
-        let (bytes, sha256) = hash_file(&root.join(&path))?;
-        Ok(FileDigest { path, bytes, sha256 })
-    }).collect::<Result<Vec<_>>>()?;
-    let manifest = Manifest { schema: 1, tool: "mobi2star".into(), version: env!("CARGO_PKG_VERSION").into(),
-        source_sha256: sha256(&document.source), rawml_sha256: sha256(&document.rawml), labels, files };
+    let files = collect_files(root)?
+        .into_iter()
+        .map(|path| {
+            let (bytes, sha256) = hash_file(&root.join(&path))?;
+            Ok(FileDigest {
+                path,
+                bytes,
+                sha256,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let manifest = Manifest {
+        schema: 1,
+        tool: "mobi2star".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        source_sha256: sha256(&document.source),
+        rawml_sha256: sha256(&document.rawml),
+        labels,
+        files,
+    };
     write_json(root, "manifest.json", &manifest)?;
     sync_directory(&root.join("res"))?;
     sync_directory(&root.join("archive"))?;
@@ -142,7 +211,11 @@ pub fn convert(input: &Path, output: &Path, limits: &Limits, offset_bits: u8, la
     drop(document);
     // No circular 'writer said success' trust: read the disk bundle and source again.
     let verified = crate::verify(root, None, limits)?;
-    if report != verified { return Err(Error::Verify("report changed during staging verification".into())); }
+    if report != verified {
+        return Err(Error::Verify(
+            "report changed during staging verification".into(),
+        ));
+    }
     let destination = tx.commit()?;
     Ok((destination, verified))
 }

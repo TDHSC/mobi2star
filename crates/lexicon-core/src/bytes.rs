@@ -1,8 +1,12 @@
 use crate::{Error, Result};
 
 pub fn slice(data: &[u8], start: usize, len: usize) -> Result<&[u8]> {
-    let end = start.checked_add(len).ok_or_else(|| Error::Malformed("offset overflow".into()))?;
-    data.get(start..end).ok_or_else(|| Error::Malformed(format!("range {start}..{end} outside {} bytes", data.len())))
+    let end = start
+        .checked_add(len)
+        .ok_or_else(|| Error::Malformed("offset overflow".into()))?;
+    data.get(start..end).ok_or_else(|| {
+        Error::Malformed(format!("range {start}..{end} outside {} bytes", data.len()))
+    })
 }
 pub fn be16(data: &[u8], at: usize) -> Result<u16> {
     let b = slice(data, at, 2)?;
@@ -14,18 +18,26 @@ pub fn be32(data: &[u8], at: usize) -> Result<u32> {
 }
 pub fn be64(data: &[u8], at: usize) -> Result<u64> {
     let b = slice(data, at, 8)?;
-    Ok(u64::from_be_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+    Ok(u64::from_be_bytes([
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+    ]))
 }
 
 /// MOBI's high bit terminates a big-endian base-128 integer; not LEB128.
 pub fn vint(data: &[u8], cursor: &mut usize) -> Result<u32> {
     let mut value = 0u32;
     for _ in 0..5 {
-        let b = *data.get(*cursor).ok_or_else(|| Error::Malformed("truncated variable integer".into()))?;
+        let b = *data
+            .get(*cursor)
+            .ok_or_else(|| Error::Malformed("truncated variable integer".into()))?;
         *cursor += 1;
-        value = value.checked_mul(128).and_then(|n| n.checked_add(u32::from(b & 0x7f)))
+        value = value
+            .checked_mul(128)
+            .and_then(|n| n.checked_add(u32::from(b & 0x7f)))
             .ok_or_else(|| Error::Malformed("variable integer overflow".into()))?;
-        if b & 0x80 != 0 { return Ok(value); }
+        if b & 0x80 != 0 {
+            return Ok(value);
+        }
     }
     Err(Error::Malformed("unterminated variable integer".into()))
 }

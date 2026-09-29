@@ -14,29 +14,73 @@ pub struct SourceBook {
     pub package: Package,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Definition { pub id: usize, pub file: String, pub span: Span, pub orths: Vec<usize>, pub ancestors: Vec<Ancestor> }
+pub struct Definition {
+    pub id: usize,
+    pub file: String,
+    pub span: Span,
+    pub orths: Vec<usize>,
+    pub ancestors: Vec<Ancestor>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Ancestor { pub name: String, pub start_tag: Span }
+pub struct Ancestor {
+    pub name: String,
+    pub start_tag: Span,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Orth { pub id: usize, pub entry_id: usize, pub value: String, pub span: Span, pub forms: Vec<usize> }
+pub struct Orth {
+    pub id: usize,
+    pub entry_id: usize,
+    pub value: String,
+    pub span: Span,
+    pub forms: Vec<usize>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Inflection {
-    pub id: usize, pub entry_id: usize, pub orth_id: usize, pub value: String,
-    pub attributes: BTreeMap<String, String>, pub position: usize,
+    pub id: usize,
+    pub entry_id: usize,
+    pub orth_id: usize,
+    pub value: String,
+    pub attributes: BTreeMap<String, String>,
+    pub position: usize,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Anchor { pub position: usize, pub entry_id: Option<usize> }
+pub struct Anchor {
+    pub position: usize,
+    pub entry_id: Option<usize>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Target { pub file: String, pub anchor: String }
+pub struct Target {
+    pub file: String,
+    pub anchor: String,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Reference { pub value: Span, pub url: String, pub target: Option<Target> }
+pub struct Reference {
+    pub value: Span,
+    pub url: String,
+    pub target: Option<Target>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Page {
-    pub file: String, pub title: String, pub body: Span, pub body_tag: Span, pub head_end: usize,
-    pub entries: Vec<usize>, pub ids: BTreeMap<String, Anchor>, pub links: Vec<Reference>,
-    pub images: Vec<Reference>, pub stylesheets: Vec<String>,
+    pub file: String,
+    pub title: String,
+    pub body: Span,
+    pub body_tag: Span,
+    pub head_end: usize,
+    pub entries: Vec<usize>,
+    pub ids: BTreeMap<String, Anchor>,
+    pub links: Vec<Reference>,
+    pub images: Vec<Reference>,
+    pub stylesheets: Vec<String>,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct Package { pub file: String, pub title: String, pub spine: Vec<String>, pub manifest: BTreeMap<String, ManifestItem> }
+pub struct Package {
+    pub file: String,
+    pub title: String,
+    pub spine: Vec<String>,
+    pub manifest: BTreeMap<String, ManifestItem>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ManifestItem { pub file: String, pub media_type: String }
+pub struct ManifestItem {
+    pub file: String,
+    pub media_type: String,
+}

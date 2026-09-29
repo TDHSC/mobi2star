@@ -61,7 +61,10 @@ const ZH: LabelText = LabelText {
 
 impl LabelLanguage {
     pub fn text(self) -> &'static LabelText {
-        match self { Self::En => &EN, Self::Zh => &ZH }
+        match self {
+            Self::En => &EN,
+            Self::Zh => &ZH,
+        }
     }
     /// Lookup key for compiled text not covered by any indexed headword; `number` starts at 1.
     pub fn supplement_key(self, number: usize) -> String {
@@ -85,19 +88,34 @@ mod tests {
     #[test]
     fn english_is_the_default() {
         assert_eq!(LabelLanguage::default(), LabelLanguage::En);
-        assert_eq!(LabelLanguage::default().supplement_key(1), "[Supplement 000001]");
-        assert_eq!(LabelLanguage::default().chapter_key_prefix(12), "[Chapter 000012] ");
+        assert_eq!(
+            LabelLanguage::default().supplement_key(1),
+            "[Supplement 000001]"
+        );
+        assert_eq!(
+            LabelLanguage::default().chapter_key_prefix(12),
+            "[Chapter 000012] "
+        );
     }
     #[test]
     fn chinese_keys_are_unchanged() {
-        assert_eq!(LabelLanguage::Zh.supplement_key(1), "〔原书补充内容 000001〕");
-        assert_eq!(LabelLanguage::Zh.chapter_key_prefix(1), "〔原书章节 000001〕 ");
+        assert_eq!(
+            LabelLanguage::Zh.supplement_key(1),
+            "〔原书补充内容 000001〕"
+        );
+        assert_eq!(
+            LabelLanguage::Zh.chapter_key_prefix(1),
+            "〔原书章节 000001〕 "
+        );
         assert_eq!(LabelLanguage::Zh.text().source_images, "〔原始源文件图片〕");
     }
     #[test]
     fn manifest_spelling_is_stable() {
         assert_eq!(serde_json::to_string(&LabelLanguage::En).unwrap(), "\"en\"");
-        assert_eq!(serde_json::from_str::<LabelLanguage>("\"zh\"").unwrap(), LabelLanguage::Zh);
+        assert_eq!(
+            serde_json::from_str::<LabelLanguage>("\"zh\"").unwrap(),
+            LabelLanguage::Zh
+        );
     }
     #[test]
     fn gallery_keys_differ_within_each_language() {
