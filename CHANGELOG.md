@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0-alpha.2 — Collins readability profile fix
 
 - Fixed: the Collins COBUILD readability profile never applied to the retail Kindle edition, whose OPF title is "COBUILD Advanced Learner's Dictionary" without "Collins". Those conversions fell back to the source-scoped layout.
 
