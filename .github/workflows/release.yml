@@ -1,0 +1,117 @@
+name: release
+# A pushed v* tag builds, attests and publishes a GitHub release.
+# A manual run builds and smoke-tests every archive without publishing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain components
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+          rustup default stable
+      - name: Read the crate version
+        id: version
+        run: |
+          version=$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[] | select(.name == "mobi2star") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Require the tag to match the crate version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match crate version $VERSION"
+            exit 1
+          fi
+      - name: Require release notes
+        run: tools/release-notes.sh "${{ steps.version.outputs.version }}"
+      - name: Run the native quality gate
+        run: ./tools/qa.sh
+
+  build:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-15-intel }
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.os }}
+    env:
+      TARGET: ${{ matrix.target }}
+      ARCHIVE: mobi2star-v${{ needs.check.outputs.version }}-${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust for the target
+        run: |
+          rustup toolchain install stable --profile minimal --target "$TARGET"
+          rustup default stable
+      - name: Install musl tools
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: cargo build --release --locked -p mobi2star --target "$TARGET"
+      - name: Smoke-test the binary
+        run: |
+          bin="target/$TARGET/release/mobi2star"
+          file "$bin"
+          "$bin" --version
+          "$bin" convert tests/fixtures/huff.mobi --output "$RUNNER_TEMP/smoke"
+          "$bin" verify "$RUNNER_TEMP/smoke/bundle" --source tests/fixtures/huff.mobi
+      - name: Require a static binary on Linux
+        if: contains(matrix.target, 'musl')
+        run: file "target/$TARGET/release/mobi2star" | grep -Eq 'statically linked|static-pie linked'
+      - name: Package
+        run: |
+          mkdir -p "dist/$ARCHIVE"
+          cp "target/$TARGET/release/mobi2star" README.md LICENSE CHANGELOG.md "dist/$ARCHIVE/"
+          tar -C dist -czf "dist/$ARCHIVE.tar.gz" "$ARCHIVE"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ARCHIVE }}
+          path: dist/${{ env.ARCHIVE }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write checksums
+        run: |
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*.tar.gz
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          tools/release-notes.sh "$VERSION" > notes.md
+          prerelease=
+          case "$VERSION" in *-*) prerelease=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "mobi2star $GITHUB_REF_NAME" \
+            --notes-file notes.md $prerelease dist/*.tar.gz dist/SHA256SUMS
