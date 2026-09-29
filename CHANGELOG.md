@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Generated labels are now English by default: lookup keys for chapters, uncovered text and image galleries, and the offline viewer interface. `convert --labels zh` restores the previous Chinese labels. The language is recorded in `manifest.json`, and verification regenerates with it.
+- Fixed: SRCS pages that start with a UTF-8 byte-order mark failed to parse, because every tag span was shifted by three bytes.
 
 ## 0.2.2-alpha.1 — Collins readability profile v2
 
