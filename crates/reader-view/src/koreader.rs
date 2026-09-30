@@ -12,7 +12,7 @@
 //!   `Size` and `scaleBySize`;
 //! - koreader-fonts 04697698: the font files.
 use crate::{
-    html::{anchors, inline_images},
+    html::{anchors, inline_images, wrap_characters},
     url::{clean_path, percent_decode},
     App, Dictionary, Match, Outcome, Stay, View,
 };
@@ -262,6 +262,8 @@ pub const NOTO_SANS: [&str; 4] = [
 /// symbol fonts.
 pub const FALLBACK_FONT: &str = "NotoSansCJKsc-Regular.otf";
 pub const LAST_FONT: &str = "FreeSerif.ttf";
+/// A family no entry uses, which `font_for` maps to `LAST_FONT`.
+pub const LAST_FONT_FAMILY: &str = "mobi2star last resort";
 
 /// The scripts Noto Sans CJK SC has characters for, by the names MuPDF's
 /// WebAssembly build asks with.
@@ -292,6 +294,9 @@ pub fn font_for(family: &str, script: &str, bold: bool, italic: bool) -> Option<
     if family == "Noto Sans" {
         return Some(NOTO_SANS[usize::from(bold) * 2 + usize::from(italic)]);
     }
+    if family == LAST_FONT_FAMILY {
+        return Some(LAST_FONT);
+    }
     if !matches!(family, "" | "undefined") || matches!(script, "" | "undefined") {
         return None;
     }
@@ -300,6 +305,22 @@ pub fn font_for(family: &str, script: &str, bold: bool, italic: bool) -> Option<
     } else {
         LAST_FONT
     })
+}
+
+/// `html` with every character in `chars` set in `LAST_FONT`.
+///
+/// Past its fallback, MuPDF's WebAssembly build has no font to try, so a
+/// character that neither the page's font nor Noto Sans CJK SC has comes
+/// out as a box where KOReader draws it with FreeSerif. The preview finds
+/// such characters after a layout and lays the page out again with them
+/// in FreeSerif, which only they use.
+pub fn with_last_font(html: &str, chars: &str) -> String {
+    wrap_characters(
+        html,
+        |c| chars.contains(c),
+        &format!("<span style=\"font-family:'{LAST_FONT_FAMILY}'\">"),
+        "</span>",
+    )
 }
 
 #[cfg(test)]
@@ -441,6 +462,10 @@ mod tests {
             Some("NotoSans-Bold.ttf")
         );
         assert_eq!(font_for("noto sans", "undefined", false, false), None);
+        assert_eq!(
+            font_for(LAST_FONT_FAMILY, "undefined", true, false),
+            Some(LAST_FONT)
+        );
         assert_eq!(font_for("serif", "undefined", false, false), None);
         for script in ["TC", "JP", "KR", "Latin", "Common"] {
             assert_eq!(
@@ -451,5 +476,13 @@ mod tests {
         for script in ["Arabic", "Thai", "Hebrew", "Devanagari"] {
             assert_eq!(font_for("undefined", script, true, false), Some(LAST_FONT));
         }
+    }
+
+    #[test]
+    fn characters_can_be_set_in_the_last_font() {
+        assert_eq!(
+            with_last_font("<p>\u{25b8} run \u{25c6}</p>", "\u{25b8}"),
+            "<p><span style=\"font-family:'mobi2star last resort'\">\u{25b8}</span> run \u{25c6}</p>"
+        );
     }
 }

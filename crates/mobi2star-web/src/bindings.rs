@@ -148,4 +148,14 @@ impl Preview {
     pub fn koreader_font(family: &str, script: &str, bold: bool, italic: bool) -> Option<String> {
         reader_view::koreader::font_for(family, script, bold, italic).map(str::to_owned)
     }
+    /// The font KOReader draws characters with that no other font has.
+    #[wasm_bindgen(js_name = koreaderLastFont)]
+    pub fn koreader_last_font() -> String {
+        reader_view::koreader::LAST_FONT.into()
+    }
+    /// `html` with the characters in `chars` set in the last font.
+    #[wasm_bindgen(js_name = koreaderWithLastFont)]
+    pub fn koreader_with_last_font(html: &str, chars: &str) -> String {
+        reader_view::koreader::with_last_font(html, chars)
+    }
 }

@@ -34,7 +34,7 @@ function koreaderPages() {
       }),
     ]);
     const fetched = new Map(fonts);
-    return new KoreaderPages(mupdf, Preview.koreaderFont, (file) => {
+    return new KoreaderPages(mupdf, Preview, (file) => {
       const bytes = fetched.get(file);
       fetched.delete(file);
       return bytes ?? fetchNow(file);

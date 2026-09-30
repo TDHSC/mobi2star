@@ -199,7 +199,7 @@ async function previewOf(book, reader) {
     wasm.Preview.koreaderFont('undefined', 'Hebrew', false, false),
   ];
   for (const file of fontFiles) check(existsSync(join(assets, file)), `${file} is bundled`);
-  const pages = new KoreaderPages(mupdf, wasm.Preview.koreaderFont, (file) => readFileSync(join(assets, file)));
+  const pages = new KoreaderPages(mupdf, wasm.Preview, (file) => readFileSync(join(assets, file)));
   const preview = await previewOf('tests/fixtures/srcs.mobi', 'koreader');
   const found = JSON.parse(preview.search('koreader', 'run'));
   const { screens, fontSizes } = choices.koreader;
@@ -218,6 +218,16 @@ async function previewOf(book, reader) {
   check(followed.outcome === 'view' && followed.results[0].headword === 'café', 'KOReader follows a link');
   const small = pages.draw(found.documents[0], JSON.parse(wasm.Preview.koreaderGeometry('phone', fontSizes.max)), 9);
   check(small.page === small.pages - 1, 'KOReader clamps the page');
+  // U+25B8 is in neither Noto Sans nor Noto Sans CJK SC: KOReader draws it
+  // with FreeSerif.
+  const symbol = found.documents[0].replace('<body>', '<body><p>\u25b8 bunch up</p>');
+  pages.draw(symbol, geometry, 0);
+  check(pages.fonts.has(wasm.Preview.koreaderLastFont()), 'the last font draws what no other font has');
+  const drawnWith = new Map();
+  pages.open.document.loadPage(0).toStructuredText().walk({
+    onChar: (char, origin, font) => drawnWith.set(char, font.getName()),
+  });
+  check(drawnWith.get('\u25b8') === 'FreeSerif.ttf' && drawnWith.get('b') === 'NotoSans-Regular.ttf', 'U+25B8 in FreeSerif');
   pages.close();
   preview.free();
 }

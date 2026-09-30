@@ -91,6 +91,68 @@ pub fn inline_images<'a>(html: &str, resolve: impl Fn(&str) -> Option<&'a [u8]>)
     splice(html, edits)
 }
 
+/// Puts each run of text characters that `pick` chooses between `before`
+/// and `after`. Character references count as the character they stand
+/// for; tags, comments and the contents of `<style>`, `<script>`,
+/// `<title>` and `<textarea>` are left alone.
+pub fn wrap_characters(
+    html: &str,
+    pick: impl Fn(char) -> bool,
+    before: &str,
+    after: &str,
+) -> String {
+    // Text is what lies between the tokenizer's tokens.
+    let mut texts = Vec::new();
+    let mut at = 0;
+    for token in Tokenizer::new(html.as_bytes()) {
+        let Ok(token) = token else {
+            return html.to_owned();
+        };
+        let span = token.span();
+        texts.push((at, span.start));
+        at = span.end;
+    }
+    texts.push((at, html.len()));
+    let mut edits = Vec::new();
+    for (start, end) in texts {
+        let Some(text) = html.get(start..end) else {
+            continue;
+        };
+        let mut out = String::with_capacity(text.len());
+        let mut open = false;
+        let mut rest = text;
+        while let Some(first) = rest.chars().next() {
+            // A character, or the reference that stands for one.
+            let unit = rest
+                .strip_prefix('&')
+                .and_then(|r| r.find(';').filter(|&n| n <= 32))
+                .map_or(first.len_utf8(), |n| n + 2);
+            let (raw, tail) = rest.split_at(unit);
+            let ch = if unit > first.len_utf8() {
+                html_preserve::decode_entities(raw)
+                    .ok()
+                    .and_then(|d| d.chars().next())
+            } else {
+                Some(first)
+            };
+            let wanted = ch.is_some_and(&pick);
+            if wanted != open {
+                out.push_str(if wanted { before } else { after });
+                open = wanted;
+            }
+            out.push_str(raw);
+            rest = tail;
+        }
+        if open {
+            out.push_str(after);
+        }
+        if out.len() != text.len() {
+            edits.push((start, end, out));
+        }
+    }
+    splice(html, edits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,6 +182,24 @@ mod tests {
         assert_eq!(
             inline_images("<img src=\"a", |_| Some(PNG)),
             "<img src=\"a",
+            "unparsable stays"
+        );
+    }
+
+    #[test]
+    fn chosen_characters_are_wrapped_in_text_only() {
+        let html = "<p title=\"\u{25b8}\">a\u{25b8}&#9656;b &amp; \u{25b8}</p>\
+                    <!-- \u{25b8} --><style>p::before{content:'\u{25b8}'}</style>";
+        let out = wrap_characters(html, |c| c == '\u{25b8}', "[", "]");
+        assert_eq!(
+            out,
+            "<p title=\"\u{25b8}\">a[\u{25b8}&#9656;]b &amp; [\u{25b8}]</p>\
+             <!-- \u{25b8} --><style>p::before{content:'\u{25b8}'}</style>"
+        );
+        assert_eq!(wrap_characters("a&b;c", |c| c == 'x', "[", "]"), "a&b;c");
+        assert_eq!(
+            wrap_characters("<p", |_| true, "[", "]"),
+            "<p",
             "unparsable stays"
         );
     }
