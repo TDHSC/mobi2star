@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0-alpha.1 — Convert in the browser
 
 - New: convert in your browser at <https://tdhsc.github.io/mobi2star/>. The page runs the same Rust converter as WebAssembly, so the file is never uploaded, and offers a zip holding the StarDict folder. It has English and Chinese text, accepts files up to 256 MiB, and is republished with every release. See docs/WEB.md.
 - New `convert --profile stardict` publishes only `StarDict/` and `report.json`: the files the browser produces, byte-identical to the full bundle's `StarDict/`. It runs the checks that happen during conversion; there is no manifest, so `verify` refuses it with a message that says so. Its report records `"profile": "stardict"` and lists only the checks that ran; full-bundle reports are unchanged.
