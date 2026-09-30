@@ -87,3 +87,18 @@ The default output leaves them only the one-line link.
 Onyx Boox devices open StarDict folders natively. Whether they apply inline `<style>`, `dictionary.css` or `res/` links has not been established. Use `universal`, or KOReader if it is installed.
 
 Sources were read at their `master` or current release on 2026-09-29; installed versions may differ.
+
+## Previewing
+
+The browser page can preview a converted dictionary as these readers show it. The rules above are what it follows:
+
+| `--reader` | Previewed as |
+|---|---|
+| `koreader` | KOReader, drawn by MuPDF with KOReader's fonts |
+| `goldendict` | GoldenDict-ng |
+| `goldendict-mobile` | GoldenDict Mobile, from user reports |
+| `readest` | Readest |
+| `kobo` | a Kobo dictionary made with PyGlossary |
+| `universal` | any of the five |
+
+See [WEB.md](WEB.md#the-preview) for how close each preview is.

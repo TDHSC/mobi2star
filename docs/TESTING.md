@@ -48,7 +48,10 @@ All fixtures are original and synthetic. The repository contains no third-party 
 - **Browser build** (`tools/web-smoke.mjs`, the `web` CI job; see [WEB.md](WEB.md)):
   - loads the built WebAssembly in Node;
   - requires every archive to equal the CLI's `--profile stardict` output for the committed fixtures, including `tests/fixtures/srcs.mobi`, which a Rust test keeps equal to the generated SRCS book;
-  - checks that the page's English and Chinese text cover every choice.
+  - checks that the page's English and Chinese text cover every choice and every code the preview shows;
+  - previews a converted fixture: lookups, suggestions and followed links;
+  - draws a KOReader page with the bundled MuPDF and fonts and checks its text, fonts, links and a followed link.
+- **Reader preview** (`crates/reader-view`): for each reader, its document, lookup and link rules on dictionaries built in memory, including test vectors for the `isolateCSS` port and KOReader's popup sizes computed by hand. `tests/readers.rs` converts the fixtures for every choice and checks that its styles reach the readers it is for, and that links resolve in KOReader for both backends. The zip loader refuses an oversized zip with `LIMIT` before inflating it. `crates/mobi2star-web/src/preview.rs` checks the JSON session and which readers a choice may be previewed in.
 
 ## What the tests do not cover
 
@@ -57,4 +60,4 @@ A passing suite shows that the implemented invariants hold on synthetic input. I
 Before relying on a converted dictionary:
 
 1. Run `mobi2star convert` and `mobi2star verify --source ORIGINAL` on it.
-2. Open it in the reader you plan to use. Rendering, fonts, pagination and link handling depend on the reader, and the report always marks them `unverified_reader_dependent`.
+2. Open it in the reader you plan to use. Rendering, fonts, pagination and link handling depend on the reader, and the report always marks them `unverified_reader_dependent`. The browser page's preview emulates five readers ([WEB.md](WEB.md#the-preview)); it is not a test on a device.

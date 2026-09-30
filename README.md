@@ -9,6 +9,7 @@ A native Rust converter from MOBI dictionaries to [StarDict](https://stardict-4.
 Open **<https://tdhsc.github.io/mobi2star/>**, choose a MOBI dictionary and your reader, and download a zip that holds the StarDict folder. The conversion runs inside your browser tab, so the file is never uploaded.
 
 - The page runs the same Rust converter as the CLI, compiled to WebAssembly, and produces the same StarDict files.
+- **Preview** shows the result as your reader would before you copy it over: look words up and follow links. KOReader's preview is drawn by MuPDF, the engine KOReader uses, with KOReader's fonts.
 - It accepts files up to 256 MiB. Phones and tablets may run out of memory on large dictionaries.
 - It is republished with every release. See [docs/WEB.md](docs/WEB.md) for how it works and what it checks.
 
@@ -192,7 +193,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SECURITY.md](docs/SEC
 | `srcs-render` | Replayable byte edits, CSS scoping, the Collins readability profile, StarDict payloads and the offline viewer |
 | `stardict-io` | StarDict encoding, parsing and payload checks shared by both backends, with thin disk wrappers |
 | `mobi2star` | CLI, backend selection, output to a directory or a zip, staged publication, source binding and end-to-end verification |
-| `mobi2star-web` | The browser page's converter and its WebAssembly bindings |
+| `mobi2star-web` | The browser page's converter and preview, and their WebAssembly bindings |
+| `reader-view` | How readers display a dictionary, for the browser preview (AGPL-3.0-or-later) |
 
 Further reading: [docs/READERS.md](docs/READERS.md), [docs/WEB.md](docs/WEB.md), [docs/TESTING.md](docs/TESTING.md) and [docs/SOURCES.md](docs/SOURCES.md).
 
@@ -206,4 +208,4 @@ Collins COBUILD is a trademark of HarperCollins Publishers. This project is not 
 
 ## License
 
-[MIT](LICENSE). Dependencies keep their own licenses.
+The CLI and its libraries are [MIT](LICENSE). `crates/reader-view`, which ports reader behaviour from GoldenDict-ng, KOReader and Readest for the browser preview, is AGPL-3.0-or-later ([its license](crates/reader-view/LICENSE)); the converter never depends on it. The published browser page includes it and bundles MuPDF, so the page is AGPL-3.0-or-later. Dependencies and bundled fonts keep their own licenses; see [docs/WEB.md](docs/WEB.md#licensing).
