@@ -12,6 +12,7 @@ mod app;
 mod archive;
 mod dictionary;
 pub mod html;
+pub mod koreader;
 mod lookup;
 pub mod url;
 mod view;
