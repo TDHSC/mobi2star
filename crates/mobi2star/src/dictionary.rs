@@ -41,6 +41,8 @@ pub(crate) struct DictionaryBuilder<'t, 'p, T: Tree> {
     aliases: Vec<CatalogAlias>,
     progress: &'p mut dyn FnMut(Stage),
     total: usize,
+    /// Offset width of the index, fixed when the payload stream starts.
+    bits: u8,
 }
 
 /// What a finished builder wrote, kept for checking it and for audits.
@@ -74,6 +76,7 @@ impl<'t, 'p, T: Tree> DictionaryBuilder<'t, 'p, T> {
             aliases: Vec::new(),
             progress,
             total,
+            bits,
         })
     }
     /// Appends one HTML payload and records its digest for the readback.
@@ -95,7 +98,7 @@ impl<'t, 'p, T: Tree> DictionaryBuilder<'t, 'p, T> {
         self.aliases.push(CatalogAlias { word, target_id });
     }
     /// Closes the payload stream and writes the index files.
-    pub fn finish(self, title: &str, bits: u8, limits: &Limits) -> Result<WrittenDictionary> {
+    pub fn finish(self, title: &str, limits: &Limits) -> Result<WrittenDictionary> {
         (self.progress)(Stage::Writing);
         let (TreeStream(tree), _) = self.payloads.into_inner()?;
         let dictionary_bytes = tree.end_stream()?;
@@ -104,7 +107,7 @@ impl<'t, 'p, T: Tree> DictionaryBuilder<'t, 'p, T> {
             &self.items,
             &self.aliases,
             dictionary_bytes,
-            bits,
+            self.bits,
             limits,
         )?;
         let dir = &self.dir;

@@ -184,7 +184,7 @@ fn write_dictionary(
             rendered_sha256: sha256(html.as_bytes()),
         });
     }
-    let written = builder.finish(title(document), options.offset_bits, limits)?;
+    let written = builder.finish(title(document), limits)?;
     for row in &mut rows {
         row.ordinal = written.encoded.catalog.ordinals[&row.entry.id];
     }

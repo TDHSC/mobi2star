@@ -385,7 +385,7 @@ fn write_dictionary(
         let id = (book.orths.len() + book.pages.len() + i) as u64;
         builder.item(id, title.into(), payload);
     }
-    let written = builder.finish(&book.package.title, options.offset_bits, limits)?;
+    let written = builder.finish(&book.package.title, limits)?;
     Ok(DictionaryFacts {
         written,
         articles,
