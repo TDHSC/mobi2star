@@ -194,15 +194,18 @@ pub(crate) fn folder_name(title: &str) -> String {
         name.push_str(word);
     }
     let name = name.trim_matches(['.', ' ']);
+    // Windows device names, with or without an extension. Compared as
+    // bytes, so a multi-byte character is never split.
     let stem = name.split('.').next().unwrap_or_default().trim_end();
-    let reserved = ["CON", "PRN", "AUX", "NUL"]
-        .iter()
-        .any(|device| stem.eq_ignore_ascii_case(device))
-        || (stem.len() == 4
-            && ["COM", "LPT"]
-                .iter()
-                .any(|device| stem[..3].eq_ignore_ascii_case(device))
-            && matches!(stem.as_bytes()[3], b'1'..=b'9'));
+    let reserved = match stem.as_bytes() {
+        device @ [_, _, _] => [b"CON", b"PRN", b"AUX", b"NUL"]
+            .iter()
+            .any(|name| device.eq_ignore_ascii_case(*name)),
+        [a, b, c, b'1'..=b'9'] => [b"COM", b"LPT"]
+            .iter()
+            .any(|name| [*a, *b, *c].eq_ignore_ascii_case(*name)),
+        _ => false,
+    };
     match name {
         "" => "Dictionary".into(),
         _ if reserved => format!("_{name}"),
@@ -310,6 +313,11 @@ mod tests {
             ("COM0", "COM0"),
             ("Console", "Console"),
             ("牛津高阶英汉双解词典", "牛津高阶英汉双解词典"),
+            // Four bytes whose fourth is inside a character.
+            ("a中", "a中"),
+            ("abé", "abé"),
+            ("😀", "😀"),
+            ("lpt9.x", "_lpt9.x"),
         ] {
             assert_eq!(folder_name(title), expected, "{title:?}");
         }
@@ -319,6 +327,21 @@ mod tests {
         assert!(words.len() <= 120 && words.ends_with("word"));
         for title in ["a", "LPT9", " x. ", &"é".repeat(300)] {
             srcs_reader::uri::validate_path(&folder_name(title)).unwrap();
+        }
+    }
+    #[test]
+    fn every_short_title_gives_a_valid_folder_name() {
+        // Characters of every UTF-8 width, plus the ones the rules treat specially.
+        let alphabet = ['a', 'é', '中', '😀', '.', ' ', '1', ':'];
+        let mut layer = vec![String::new()];
+        for _ in 0..4 {
+            layer = layer
+                .iter()
+                .flat_map(|title| alphabet.iter().map(move |c| format!("{title}{c}")))
+                .collect();
+            for title in &layer {
+                srcs_reader::uri::validate_path(&folder_name(title)).unwrap();
+            }
         }
     }
 }
