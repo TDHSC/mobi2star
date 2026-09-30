@@ -57,12 +57,13 @@ xattr -d com.apple.quarantine mobi2star
 
 ### From source
 
-You need a Rust toolchain. The minimum supported version is 1.85; current stable is recommended.
+You need a Rust toolchain. The minimum supported version is 1.85; current stable is recommended. From a checkout:
 
 ```sh
-./tools/qa.sh                                    # check formatting, test, lint, release build
-cargo install --path crates/mobi2star --locked   # install the CLI
+cargo install --path crates/mobi2star --locked
 ```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers building and testing.
 
 ## Usage
 
@@ -82,20 +83,7 @@ mobi2star lookup ./converted/bundle run
 
 Every command accepts `--json` for machine-readable output (errors go to stderr). Size budgets can be raised with `--max-input-mib`, `--max-text-mib`, `--max-entry-mib` and `--max-output-mib`.
 
-`convert` options:
-
-- `--backend auto|srcs|compiled` selects the backend; the default is `auto`.
-- `--offset-bits 32|64` sets the StarDict offset width. The default of 32 is the most portable; use 64 only if your reader supports it.
-- `--labels en|zh` sets the language of the text that mobi2star generates itself. The default is `en`.
-  - This covers lookup keys for chapters, image galleries and text outside any headword (such as `[Chapter 000001] Preface` or `[Supplement 000001]`), plus the offline viewer's interface.
-  - Dictionary content is never translated.
-  - The choice is recorded in `manifest.json`, so `verify` needs no extra option.
-- `--reader` sets the reader the dictionary is built for, which decides how entries reference the stylesheet. See [Choosing a reader](#choosing-a-reader).
-- `--profile stardict` publishes only `StarDict/` and `report.json`, the files the browser page produces. They are byte-identical to the full bundle's `StarDict/` and pass the checks that run during conversion, but with no manifest `verify` cannot check them later. The default, `bundle`, writes the full bundle.
-
-The output directory must not exist yet. `convert` creates it with owner-only permissions (`0700`) and publishes `OUTPUT/bundle` only after every check passes. If any check fails, the staging tree is removed and existing files are left untouched.
-
-Verification rebuilds the full bundle in the system temporary directory (set `TMPDIR` to move it), so reserve free space for about twice the bundle size. The default bundle budget is 8 GiB.
+[docs/CLI.md](docs/CLI.md) lists every `convert` option (backend, offset width, label language, reader and profile) and the output layout.
 
 ### Choosing a reader
 
@@ -118,58 +106,11 @@ Copy the whole `StarDict/` directory into your reader's dictionary folder, inclu
 
 ## Output layout
 
-The `srcs` backend produces:
-
-```text
-bundle/
-├── StarDict/            # import this directory into your reader
-│   ├── dictionary.ifo
-│   ├── dictionary.idx
-│   ├── dictionary.dict
-│   ├── dictionary.syn
-│   ├── dictionary.css   # loaded by KOReader
-│   └── res/
-│       ├── dictionary.css  # linked from entries (not written for inline-only readers)
-│       ├── source/      # images from the publisher source
-│       └── compiled/    # images from the compiled MOBI
-├── Browser/             # static offline viewer
-│   ├── index.html
-│   ├── images.html
-│   ├── lookup-data.js
-│   ├── viewer.js
-│   ├── viewer.css
-│   ├── content/         # full chapters with original styles and images
-│   └── compiled/
-├── Source/              # byte-exact copy of every file in the embedded ZIP
-├── Audit/               # original MOBI, raw text, parsed facts, render plan, cross-checks
-├── manifest.json        # SHA-256 of every file
-└── report.json
-```
-
-The `compiled` backend writes a flat bundle: the `dictionary.*` files (including `dictionary.css`) and `res/` at the bundle root, plus `archive/`, `manifest.json` and `report.json`. `lookup` and `verify` recognize both layouts.
+`convert` publishes `OUTPUT/bundle`. With the `srcs` backend, import `bundle/StarDict/`; [docs/CLI.md](docs/CLI.md#output-layout) describes both backends' layouts.
 
 ## What is checked
 
-The `srcs` backend works only from facts stated in the file. It reads every headword, definition block, explicit inflection, page, anchor and resource in the source XHTML, then cross-checks them against the compiled MOBI index, its shared-definition references and its inflection rules:
-
-- Headwords and inflections are compared as multisets, including ownership and repeat counts.
-- The visible text of each definition block is compared with the compiled text after whitespace normalization.
-- Content is converted by copying original UTF-8 byte ranges plus the attribute rewrites that are needed. Every edit is recorded with its range and reason, so the original can be reconstructed.
-
-After writing, a separate StarDict reader checks index ordering, alias targets, shared ranges, full payload coverage and readback. The bundle is then regenerated from the archived MOBI and compared by file set, size and SHA-256.
-
-Regeneration reuses the same parser and renderer, so it cannot catch a bug that affects both runs identically. The cross-format text comparison, byte-exact archives, synthetic tests and reader acceptance cover that gap from different angles.
-
-The report keeps content checks separate from rendering:
-
-```json
-{
-  "backend": "srcs-rust",
-  "implemented_content_checks_passed": true,
-  "rendering_status": "unverified_reader_dependent",
-  "skipped_entries": 0
-}
-```
+Publisher-source conversions are cross-checked against the compiled MOBI index. Every conversion is re-read by an independent StarDict reader, and a full bundle is regenerated and compared file by file before it is published. [docs/VERIFICATION.md](docs/VERIFICATION.md) describes each check and its limits.
 
 ## Limitations
 
@@ -184,21 +125,7 @@ The `srcs` backend currently accepts a single classic ZIP with a single OPF, UTF
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SECURITY.md](docs/SECURITY.md).
 
-## Project layout
-
-| Crate | Responsibility |
-|---|---|
-| `lexicon-core` | Byte ranges, entry model, budgets, errors, hashing and path validation |
-| `mobi-reader` | PDB/MOBI container, PalmDOC/HUFF decompression, INDX/ORDT, shared references and inflection rules |
-| `html-preserve` | Raw HTML byte positions and local edits for the `compiled` backend |
-| `srcs-reader` | ZIP/XHTML/OPF reading, source fact model, image decoding and compiled-index cross-checks |
-| `srcs-render` | Replayable byte edits, CSS scoping, the Collins readability profile, StarDict payloads and the offline viewer |
-| `stardict-io` | StarDict encoding, parsing and payload checks shared by both backends, with thin disk wrappers |
-| `mobi2star` | CLI, backend selection, output to a directory or a zip, staged publication, source binding and end-to-end verification |
-| `mobi2star-web` | The browser page's converter and preview, and their WebAssembly bindings |
-| `reader-view` | How readers display a dictionary, for the browser preview (AGPL-3.0-or-later) |
-
-Further reading: [docs/READERS.md](docs/READERS.md), [docs/WEB.md](docs/WEB.md), [docs/TESTING.md](docs/TESTING.md) and [docs/SOURCES.md](docs/SOURCES.md).
+Further reading: [docs/CLI.md](docs/CLI.md), [docs/READERS.md](docs/READERS.md), [docs/WEB.md](docs/WEB.md), [docs/VERIFICATION.md](docs/VERIFICATION.md), [docs/TESTING.md](docs/TESTING.md) and [docs/SOURCES.md](docs/SOURCES.md). The crates are listed in [CONTRIBUTING.md](CONTRIBUTING.md#project-layout).
 
 ## Dictionary content and trademarks
 
