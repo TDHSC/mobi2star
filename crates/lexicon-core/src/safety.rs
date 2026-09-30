@@ -24,7 +24,9 @@ pub fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
     read_limited(file, length, limit, &path.display())
 }
 /// Reads all of `reader`, whose declared size is `length`, refusing more
-/// than `limit` bytes even if the declared size was wrong.
+/// than `limit` bytes even if the declared size was wrong. Room for the
+/// declared size is reserved first, so a size memory cannot hold is a
+/// `Limit` error rather than an allocation abort (fatal in WebAssembly).
 pub fn read_limited(
     reader: impl Read,
     length: u64,
@@ -35,6 +37,8 @@ pub fn read_limited(
         return Err(Error::Limit(format!("{name} exceeds {limit} bytes")));
     }
     let mut data = Vec::new();
+    data.try_reserve_exact(length as usize)
+        .map_err(|_| Error::Limit(format!("not enough memory for {name} ({length} bytes)")))?;
     reader.take(limit as u64 + 1).read_to_end(&mut data)?;
     if data.len() > limit {
         return Err(Error::Limit("input grew beyond limit while reading".into()));
