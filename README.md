@@ -1,35 +1,87 @@
-# mobi2star
+<p align="center">
+  <img src="web/icon.svg" width="96" height="96" alt="">
+</p>
 
-A native Rust converter from MOBI dictionaries to [StarDict](https://stardict-4.sourceforge.net/StarDictFileFormat), built for readers such as KOReader. It keeps every headword, homograph, inflection, link and image, and it treats unsupported content as an error rather than silently skipping it.
+<h1 align="center">mobi2star</h1>
 
-> **Status: alpha.** Output layout, report fields and library APIs may change between releases. Content checks are automated; how a dictionary looks in a particular reader still needs to be checked on that reader.
+<p align="center">
+  <b>Convert MOBI dictionaries to StarDict for KOReader and other e-readers, in your browser or on the command line.</b>
+</p>
 
-## Use it in your browser
+<p align="center">
+  <a href="https://github.com/TDHSC/mobi2star/actions/workflows/ci.yml"><img src="https://github.com/TDHSC/mobi2star/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://github.com/TDHSC/mobi2star/releases"><img src="https://img.shields.io/github/v/release/TDHSC/mobi2star?include_prereleases" alt="Latest release"></a>
+</p>
 
-Open **<https://tdhsc.github.io/mobi2star/>**, choose a MOBI dictionary and your reader, and download a zip that holds the StarDict folder. The conversion runs inside your browser tab, so the file is never uploaded.
+<p align="center">
+  <a href="https://tdhsc.github.io/mobi2star/"><b>Open the web app</b></a> ·
+  <a href="#install">Download the CLI</a> ·
+  <a href="#put-it-on-your-e-reader">Put it on your e-reader</a> ·
+  <a href="docs/READERS.md">Supported readers</a>
+</p>
 
-- The page runs the same Rust converter as the CLI, compiled to WebAssembly, and produces the same StarDict files.
-- **Preview** shows the result as your reader would before you copy it over: look words up and follow links. KOReader's preview is drawn by MuPDF, the engine KOReader uses, with KOReader's fonts.
-- It accepts files up to 256 MiB. Phones and tablets may run out of memory on large dictionaries.
-- It is republished with every release. See [docs/WEB.md](docs/WEB.md) for how it works and what it checks.
+Every headword, homograph, inflection, link and image comes through. Anything mobi2star cannot convert stops the conversion with an error instead of silently disappearing. The web app runs entirely in your browser tab, so your dictionary is never uploaded.
 
-Use the command-line tool for the full audit bundle, later verification with `verify`, or larger limits.
+**Alpha:** output layout, report fields and library APIs may still change. Not supported yet: DRM-protected and KF8/hybrid files ([all limits](#what-it-cannot-convert-yet)).
 
-## Features
+## Quick start
 
-- **Two backends.** `srcs` reads the publisher source that KindleGen embeds in many MOBI files (the SRCS record: a ZIP of XHTML, OPF, CSS and images). `compiled` reads the compiled MOBI text of ordinary dictionaries. The default, `auto`, uses `srcs` whenever an embedded source is present.
-- **Nothing is dropped.** Homographs keep separate index records, entries that share one definition share one `.dict` range, and explicit inflections become `.syn` aliases.
-- **Working links and images.** Internal links resolve to lookup routes, including exact `route#anchor` aliases for KOReader's link handling. Images are written to `res/`.
-- **Offline browser viewer.** The `srcs` backend also writes a static HTML lookup page with the full chapters.
-- **Verification built in.** After writing, an independent StarDict reader re-parses the output, the whole bundle is regenerated from the archived source and compared file by file, and a SHA-256 manifest covers every file.
-- **Readability profile for Collins COBUILD.** A built-in layout adapter that makes Collins COBUILD dictionaries readable on narrow screens. See [docs/READABILITY.md](docs/READABILITY.md).
-- **Local and bounded.** One binary with no helper processes and no network access. Input, decompression and output sizes have explicit budgets, and application code forbids `unsafe`.
+**In your browser, nothing to install:** open **<https://tdhsc.github.io/mobi2star/>**, choose a `.mobi` dictionary and your reader, look a few words up in **Preview**, then download the zip. The page runs the same Rust converter as the CLI, compiled to WebAssembly, and produces the same StarDict files. It accepts files up to 256 MiB; phones and tablets may run out of memory on large dictionaries. [How it works](docs/WEB.md)
+
+**On the command line:** [download the binary](#install) for your platform, then:
+
+```sh
+mobi2star convert dictionary.mobi --output ./converted --profile stardict
+# the dictionary to copy is ./converted/bundle/StarDict/
+```
+
+## Put it on your e-reader
+
+Copy the dictionary folder into KOReader's dictionary folder: from the web app, the folder inside the zip; from the CLI, `StarDict/`, renamed to anything you like. Keep `dictionary.css` and `res/` inside it.
+
+| Device | KOReader's dictionary folder |
+|---|---|
+| Kindle | `koreader/data/dict/` |
+| Kobo | `.adds/koreader/data/dict/` (`.adds` is a hidden folder) |
+| PocketBook | `applications/koreader/data/dict/` |
+| Android | `/sdcard/koreader/data/dict/` |
+| Linux | `~/.config/koreader/data/dict/` |
+| macOS | `~/Library/Application Support/koreader/data/dict/` |
+
+Then restart KOReader and long-press a word in a book. The dictionary is listed under **Dictionary settings → Manage dictionaries**. The folders come from [KOReader's wiki](https://github.com/koreader/koreader/wiki/Dictionary-support), which also covers other devices.
+
+For another reader, pick it when converting ([Choosing a reader](#choosing-a-reader)) and copy the folder to wherever that reader keeps StarDict dictionaries.
+
+## Why mobi2star
+
+The usual dictionary converters, PyGlossary and penelope, can write MOBI but cannot read it. mobi2star goes the other way and keeps what matters in a dictionary:
+
+- **Nothing silently dropped.** Homographs keep separate entries, inflected forms find their headword, and entries that share a definition still share it.
+- **Links and pictures work.** Cross-references open the right entry, including KOReader's handling of `#anchor` links, and images come along.
+- **See it before you copy it.** **Preview** in the web app shows the dictionary as your reader would. For KOReader it is drawn by MuPDF, the engine KOReader uses, with KOReader's fonts.
+- **Made for your reader.** Readers load a dictionary's stylesheet in different ways, and the output follows the one you pick.
+- **Private.** The web app never uploads your file. The CLI is one binary with no network access and no helper processes.
+- **Checked, not assumed.** An independent StarDict reader re-reads everything written, and the CLI regenerates the whole bundle and compares it file by file. [What is checked](docs/VERIFICATION.md)
+- **Readable Collins COBUILD.** A built-in layout profile makes Collins COBUILD dictionaries readable on narrow screens. [Details](docs/READABILITY.md)
+
+## Choosing a reader
+
+The web app asks for your reader; the CLI takes `--reader`, and the default is `koreader`.
+
+| Reader | `--reader` | How it was established |
+|---|---|---|
+| KOReader | `koreader` | rendered with its engine, and read in its source |
+| GoldenDict, GoldenDict-ng (desktop) | `goldendict` | read in its source |
+| GoldenDict Mobile (Android) | `goldendict-mobile` | user reports |
+| Readest | `readest` | read in its source |
+| Kobo, through PyGlossary or penelope | `kobo` | read in their source |
+| Several readers from one folder, or one not listed (such as Boox) | `universal` | combines the cases above |
+
+Nothing has been tested on a physical device yet, so reports are welcome. `goldendict-mobile`, `readest` and `kobo` give every entry its own copy of the stylesheet, which makes the dictionary roughly twice as large. [READERS.md](docs/READERS.md) has the evidence for each reader.
 
 ## Install
 
-### Prebuilt binaries
-
-Every [release](https://github.com/TDHSC/mobi2star/releases) has an archive for each supported platform:
+The web app needs no installation. For the CLI, every [release](https://github.com/TDHSC/mobi2star/releases) has an archive for each supported platform:
 
 | Platform | Archive suffix |
 |---|---|
@@ -38,100 +90,72 @@ Every [release](https://github.com/TDHSC/mobi2star/releases) has an archive for 
 | Linux, x86_64 (static, any distribution) | `x86_64-unknown-linux-musl` |
 | Linux, ARM64 (static, any distribution) | `aarch64-unknown-linux-musl` |
 
-Download the archive for your platform, extract it, and put `mobi2star` on your `PATH`.
+Download the archive for your platform, extract it, and put `mobi2star` on your `PATH`. The macOS binaries are not signed or notarized, so macOS blocks them the first time. After extracting, clear the quarantine flag:
 
-Each release also has `mobi2star-vX.Y.Z-web.tar.gz`: that release's browser page, the `index.html` and `v/X.Y.Z/` files published at <https://tdhsc.github.io/mobi2star/>, which any static host can serve. Pages keeps only the two newest releases; the archive keeps every version.
+```sh
+xattr -d com.apple.quarantine mobi2star
+```
 
-Each release also includes a `SHA256SUMS` file and a build-provenance attestation for every archive. To check an archive:
+<details>
+<summary>Verify the download</summary>
+
+Each release includes a `SHA256SUMS` file and a build-provenance attestation for every archive:
 
 ```sh
 shasum -a 256 -c SHA256SUMS --ignore-missing
 gh attestation verify mobi2star-*.tar.gz --repo TDHSC/mobi2star
 ```
 
-The macOS binaries are not signed or notarized, so macOS blocks them the first time. After extracting, clear the quarantine flag:
+</details>
 
-```sh
-xattr -d com.apple.quarantine mobi2star
-```
+Each release also has `mobi2star-vX.Y.Z-web.tar.gz`: that release's browser page, the `index.html` and `v/X.Y.Z/` files published at <https://tdhsc.github.io/mobi2star/>, which any static host can serve. Pages keeps only the two newest releases; the archive keeps every version.
 
-### From source
-
-You need a Rust toolchain. The minimum supported version is 1.85; current stable is recommended. From a checkout:
+To build from source you need Rust 1.85 or later. From a checkout:
 
 ```sh
 cargo install --path crates/mobi2star --locked
 ```
 
-[CONTRIBUTING.md](CONTRIBUTING.md) covers building and testing.
-
-## Usage
+## Command-line usage
 
 ```sh
-mobi2star inspect dictionary.mobi
-mobi2star convert dictionary.mobi --output ./converted
+mobi2star inspect dictionary.mobi                          # which backend would be used
+mobi2star convert dictionary.mobi --output ./converted     # convert, check, publish ./converted/bundle
 mobi2star verify ./converted/bundle --source dictionary.mobi
-mobi2star lookup ./converted/bundle run
+mobi2star lookup ./converted/bundle run                    # every entry for "run"
 ```
 
-| Command | What it does |
-|---|---|
-| `inspect` | Reads the container header and reports which backend would be used. Passing `inspect` does not guarantee that conversion will succeed. |
-| `convert` | Converts, audits, re-reads and verifies, then publishes `OUTPUT/bundle`. |
-| `verify` | Re-checks an existing bundle. `--source` also requires the bundle to match that original file exactly. |
-| `lookup` | Prints every exact-spelling match, including homographs and aliases. |
+By default `convert` writes a full bundle: the dictionary, an offline browser viewer, a byte-exact copy of the source, an audit trail and a SHA-256 manifest, so `verify` can re-check it later. `--profile stardict` writes only the dictionary, as the web app does. Use the CLI rather than the web app for the full bundle, for `verify`, or for files over the web app's 256 MiB limit. Every command accepts `--json`.
 
-Every command accepts `--json` for machine-readable output (errors go to stderr). Size budgets can be raised with `--max-input-mib`, `--max-text-mib`, `--max-entry-mib` and `--max-output-mib`.
+[docs/CLI.md](docs/CLI.md) has every option and the output layout.
 
-[docs/CLI.md](docs/CLI.md) lists every `convert` option (backend, offset width, label language, reader and profile) and the output layout.
+## What it cannot convert yet
 
-### Choosing a reader
-
-Readers load a dictionary's stylesheet in different ways, so `convert --reader` tailors the output. `dictionary.css` next to the `.ifo` is always written.
-
-| `--reader` | Use it for | What each entry carries |
-|---|---|---|
-| `koreader` (default) | KOReader; also works for GoldenDict desktop | a hidden `<link>` to `res/dictionary.css` |
-| `goldendict` | GoldenDict and GoldenDict-ng on desktop | same as `koreader` |
-| `goldendict-mobile` | GoldenDict Mobile on Android | its own `<style>` copy |
-| `readest` | Readest | its own `<style>` copy |
-| `kobo` | converting to a Kobo dictionary with PyGlossary or penelope | its own `<style>` copy |
-| `universal` | one folder shared by several readers, or a reader not listed here (e.g. Boox) | both |
-
-Inline copies make the dictionary roughly twice as large; for Collins COBUILD the `.dict` is 146 MB with `koreader` and 305 MB with `readest`. [docs/READERS.md](docs/READERS.md) records how each reader was assessed and how confident that assessment is.
-
-### Importing into a reader
-
-Copy the whole `StarDict/` directory into your reader's dictionary folder, including `dictionary.css` and `res/`. `Browser/index.html` can be opened directly in a web browser.
-
-## Output layout
-
-`convert` publishes `OUTPUT/bundle`. With the `srcs` backend, import `bundle/StarDict/`; [docs/CLI.md](docs/CLI.md#output-layout) describes both backends' layouts.
-
-## What is checked
-
-Publisher-source conversions are cross-checked against the compiled MOBI index. Every conversion is re-read by an independent StarDict reader, and a full bundle is regenerated and compared file by file before it is published. [docs/VERIFICATION.md](docs/VERIFICATION.md) describes each check and its limits.
-
-## Limitations
-
-The `srcs` backend currently accepts a single classic ZIP with a single OPF, UTF-8 compiled text and the supported XHTML/CSS subset. The following fail with an error until a dedicated adapter exists:
+These fail with an error rather than producing an incomplete dictionary:
 
 - encrypted (DRM) input
 - KF8/hybrid files
-- ZIP64 or multi-volume ZIP archives
 - embedded fonts, audio or video
 - LIGT records
 - unknown content records
+- with the publisher-source (`srcs`) backend, anything other than a single classic ZIP with a single OPF, UTF-8 compiled text and the supported XHTML/CSS subset; ZIP64 and multi-volume archives, for example
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SECURITY.md](docs/SECURITY.md).
+mobi2star does not remove DRM. See [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [SECURITY.md](docs/SECURITY.md).
 
-Further reading: [docs/CLI.md](docs/CLI.md), [docs/READERS.md](docs/READERS.md), [docs/WEB.md](docs/WEB.md), [docs/VERIFICATION.md](docs/VERIFICATION.md), [docs/TESTING.md](docs/TESTING.md) and [docs/SOURCES.md](docs/SOURCES.md). The crates are listed in [CONTRIBUTING.md](CONTRIBUTING.md#project-layout).
+## Documentation
+
+- [CLI.md](docs/CLI.md): every command and option, and the output layout
+- [READERS.md](docs/READERS.md): how each reader loads a dictionary, and how sure we are
+- [WEB.md](docs/WEB.md): how the web app and its preview work, and what they check
+- [VERIFICATION.md](docs/VERIFICATION.md): what is checked before output is published
+- [READABILITY.md](docs/READABILITY.md): the Collins COBUILD layout profile
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md), [TESTING.md](docs/TESTING.md), [SECURITY.md](docs/SECURITY.md) and [SOURCES.md](docs/SOURCES.md): the internals
+
+Bug reports and patches are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Dictionary content and trademarks
 
-This repository contains only project code and original synthetic test fixtures. It does not include or distribute any dictionary content. Convert only dictionaries you are entitled to use.
-
-A bundle contains a full copy of its input file (`Audit/original.mobi`), so treat it as private and do not redistribute it.
+This repository contains only project code and original synthetic test fixtures. It does not include or distribute any dictionary content. Convert only dictionaries you are entitled to use. A full bundle contains a copy of its input file, so treat it as private and do not redistribute it.
 
 Collins COBUILD is a trademark of HarperCollins Publishers. This project is not affiliated with or endorsed by HarperCollins, Amazon or the StarDict and KOReader projects.
 
