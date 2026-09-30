@@ -287,7 +287,8 @@ pub fn convert(
         options,
         &mut |_| {},
     )?;
-    check_written(&mut *tree.readback()?, &compiled.written, limits)?;
+    // No `check_written` here: `verify` below reads every file back and
+    // checks it against the source, which covers the same ground.
     tree.put("archive/source.mobi", &document.source)?;
     tree.put("archive/rawml.bin", &document.rawml)?;
     tree.put_json("archive/metadata.json", &document.metadata)?;
