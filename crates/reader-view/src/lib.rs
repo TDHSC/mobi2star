@@ -11,8 +11,12 @@
 mod app;
 mod archive;
 mod dictionary;
+pub mod html;
+mod lookup;
+pub mod url;
 mod view;
 
 pub use app::{App, Engine, Facts, Fidelity, StyleSource};
 pub use dictionary::Dictionary;
+pub use lookup::is_internal_key;
 pub use view::{Match, Outcome, Stay, View};

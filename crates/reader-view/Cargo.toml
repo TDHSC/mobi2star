@@ -22,4 +22,5 @@ zip.workspace = true
 
 [dev-dependencies]
 mobi2star.workspace = true
+srcs-render.workspace = true
 serde_json.workspace = true

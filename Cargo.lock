@@ -588,6 +588,7 @@ dependencies = [
  "mobi2star",
  "serde",
  "serde_json",
+ "srcs-render",
  "stardict-io",
  "unicode-normalization",
  "zip",

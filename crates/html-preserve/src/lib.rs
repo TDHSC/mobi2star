@@ -77,9 +77,10 @@ fn attr_value(a: &Attribute, raw: &[u8], encoding: Encoding) -> Result<String> {
     let span = a
         .value
         .ok_or_else(|| Error::Malformed(format!("attribute {} needs a value", a.name)))?;
-    entities(&encoding.decode(span.bytes(raw)?)?)
+    decode_entities(&encoding.decode(span.bytes(raw)?)?)
 }
-fn entities(value: &str) -> Result<String> {
+/// Decodes the character references in an attribute value.
+pub fn decode_entities(value: &str) -> Result<String> {
     let mut result = String::new();
     let mut rest = value;
     while let Some(at) = rest.find('&') {
@@ -653,8 +654,8 @@ mod tests {
     }
     #[test]
     fn entities_keep_nonascii_and_decode_positions() {
-        assert_eq!(entities("é&#233;&amp;中").unwrap(), "éé&中");
-        assert!(entities("&#0;").is_err());
+        assert_eq!(decode_entities("é&#233;&amp;中").unwrap(), "éé&中");
+        assert!(decode_entities("&#0;").is_err());
     }
     #[test]
     fn untouched_bytes_are_not_reserialized() {

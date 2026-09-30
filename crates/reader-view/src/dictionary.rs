@@ -1,7 +1,7 @@
 //! A converted StarDict dictionary held in memory.
 use lexicon_core::{Error, Limits, Result};
 use stardict_io::{IndexEntry, ParsedDictionary};
-use std::{collections::BTreeMap, io::Cursor};
+use std::{cell::OnceCell, collections::BTreeMap, io::Cursor};
 
 /// The files a reader sees: the parsed index, the payloads, the stylesheet
 /// next to the `.ifo`, and the `res/` folder.
@@ -13,6 +13,8 @@ pub struct Dictionary {
     /// Files under `res/`, by their path inside it.
     resources: BTreeMap<String, Vec<u8>>,
     entry_limit: usize,
+    /// Folded key to entries, for GoldenDict-style lookups; see `lookup`.
+    pub(crate) folded: OnceCell<BTreeMap<String, Vec<usize>>>,
 }
 
 impl Dictionary {
@@ -33,6 +35,7 @@ impl Dictionary {
             companion_css,
             resources,
             entry_limit: limits.entry_bytes,
+            folded: OnceCell::new(),
         })
     }
     pub fn bookname(&self) -> &str {
