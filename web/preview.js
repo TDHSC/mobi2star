@@ -19,6 +19,13 @@ const FRAME_SIZES = {
  */
 const PAGE_SCALE = 0.5;
 
+/**
+ * Everything in an entry that a click can follow: HTML and SVG `<a>`,
+ * image-map `<area>`, and MathML elements with `href`.
+ */
+const LINKS = 'a, area, math[href], math [href]';
+const XLINK = 'http://www.w3.org/1999/xlink';
+
 /** A draw that takes longer than this says so. */
 const SLOW_DRAW_MS = 400;
 
@@ -57,16 +64,21 @@ class FrameView {
     await this.ready;
     const doc = this.frame.contentDocument;
     if (this.listening !== doc) {
-      doc.addEventListener(
-        'click',
-        (event) => {
-          const link = event.target.closest?.('a[href]');
-          if (!link) return;
-          event.preventDefault();
-          this.onLink(link.getAttribute('href'));
-        },
-        true,
-      );
+      // Every activation of a link is cancelled before the frame could
+      // navigate; a click hands its target to the reader's rules.
+      for (const type of ['click', 'auxclick']) {
+        doc.addEventListener(
+          type,
+          (event) => {
+            const link = event.target.closest?.(LINKS);
+            if (!link) return;
+            event.preventDefault();
+            const href = link.getAttribute('href') ?? link.getAttributeNS(XLINK, 'href');
+            if (type === 'click' && href !== null) this.onLink(href);
+          },
+          true,
+        );
+      }
       this.listening = doc;
     }
     // The frame's own parser: a document parsed by the page's would inherit
