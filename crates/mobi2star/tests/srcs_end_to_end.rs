@@ -1,5 +1,7 @@
 //! Fixtures are produced entirely in Rust from this project's original synthetic
 //! MOBI. No publisher content or external interpreter is needed by this suite.
+mod common;
+use common::{edit_manifest, rewrite_with_digest};
 use lexicon_core::{sha256, LabelLanguage, Limits, TargetReader, LINK_TAG};
 use mobi2star::OutputOptions;
 use mobi_reader::{pdb::PalmDatabase, Container};
@@ -186,24 +188,11 @@ fn generated_labels_default_to_english_and_chinese_is_opt_in() {
         .contains("<html lang=\"zh-CN\">"));
     // Verification regenerates with the language recorded in the manifest.
     mobi2star::verify_source(&bundle, Some(&source), &limits).unwrap();
-    let mpath = bundle.join("manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(&mpath).unwrap()).unwrap();
-    assert_eq!(manifest["labels"], "zh");
-    manifest["labels"] = "en".into();
-    fs::write(mpath, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    edit_manifest(&bundle, |manifest| {
+        assert_eq!(manifest["labels"], "zh");
+        manifest["labels"] = "en".into();
+    });
     assert!(mobi2star::verify_source(&bundle, None, &limits).is_err());
-}
-fn payload(bundle: &Path, word: &str) -> String {
-    let limits = Limits::default();
-    let disk = stardict_io::open(&bundle.join("StarDict"), &limits).unwrap();
-    let mut dict = fs::File::open(&disk.dictionary_path).unwrap();
-    stardict_io::read_payload(
-        &mut dict,
-        &disk.entries[disk.lookup(word)[0]],
-        limits.entry_bytes,
-    )
-    .unwrap()
 }
 /// Relative path and SHA-256 of every file under `root`, sorted.
 fn tree_digest(root: &Path) -> Vec<(String, String)> {
@@ -267,7 +256,8 @@ fn each_reader_gets_its_stylesheet_delivery() {
             prefix.push_str(&format!("<style>{css}</style>"));
         }
         assert!(
-            payload(&bundle, "run").starts_with(&format!("{prefix}<div class=\"m2s_")),
+            common::payload(&bundle.join("StarDict"), "run")
+                .starts_with(&format!("{prefix}<div class=\"m2s_")),
             "{reader:?}"
         );
         // The reader changes StarDict payloads only, never the viewer or the plan.
@@ -290,12 +280,10 @@ fn each_reader_gets_its_stylesheet_delivery() {
         mobi2star::verify_bundle(&bundle, Some(&source), &limits),
         Ok(mobi2star::ConversionReport::Source(_))
     ));
-    let path = bundle.join("manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(manifest["reader"], "universal");
-    manifest["reader"] = "koreader".into();
-    fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    edit_manifest(&bundle, |manifest| {
+        assert_eq!(manifest["reader"], "universal");
+        manifest["reader"] = "koreader".into();
+    });
     assert!(mobi2star::verify_source(&bundle, None, &limits).is_err());
 }
 #[test]
@@ -352,20 +340,11 @@ fn changed_payload_with_rehashed_manifest_fails_regeneration() {
         OutputOptions::default(),
     )
     .unwrap();
-    let path = bundle.join("StarDict/dictionary.dict");
-    let mut bytes = fs::read(&path).unwrap();
+    let name = "StarDict/dictionary.dict";
+    let mut bytes = fs::read(bundle.join(name)).unwrap();
     let at = bytes.windows(3).position(|w| w == b"run").unwrap();
     bytes[at] = b'f';
-    fs::write(path, &bytes).unwrap();
-    let mpath = bundle.join("manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(&mpath).unwrap()).unwrap();
-    for f in manifest["files"].as_array_mut().unwrap() {
-        if f["path"] == "StarDict/dictionary.dict" {
-            f["sha256"] = sha256(&bytes).into();
-        }
-    }
-    fs::write(mpath, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    rewrite_with_digest(&bundle, name, &bytes);
     assert!(mobi2star::verify_source(&bundle, None, &limits).is_err());
 }
 #[test]

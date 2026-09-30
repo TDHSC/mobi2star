@@ -1,4 +1,6 @@
 //! Synthetic-only acceptance tests. A passing suite is not a real-dictionary certification.
+mod common;
+use common::{edit_manifest, rewrite_with_digest};
 use lexicon_core::{sha256, Error, LabelLanguage, Limits, TargetReader, LINK_TAG};
 use mobi2star::OutputOptions;
 use std::{fs, path::Path};
@@ -106,28 +108,11 @@ fn changed_label_language_in_manifest_fails_verification() {
         OutputOptions::default(),
     )
     .unwrap();
-    let path = bundle.join("manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(manifest["labels"], "en");
-    manifest["labels"] = "zh".into();
-    fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    edit_manifest(&bundle, |manifest| {
+        assert_eq!(manifest["labels"], "en");
+        manifest["labels"] = "zh".into();
+    });
     assert!(mobi2star::verify(&bundle, None, &Limits::default()).is_err());
-}
-/// Replaces a bundle file and updates its manifest digest, so only
-/// source-derived checks can catch the change.
-fn rewrite_with_digest(bundle: &Path, name: &str, bytes: &[u8]) {
-    fs::write(bundle.join(name), bytes).unwrap();
-    let path = bundle.join("manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    for file in manifest["files"].as_array_mut().unwrap() {
-        if file["path"] == name {
-            file["bytes"] = bytes.len().into();
-            file["sha256"] = sha256(bytes).into();
-        }
-    }
-    fs::write(path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
 }
 fn converted(dir: &Path, reader: TargetReader) -> (std::path::PathBuf, std::path::PathBuf) {
     let source = input(dir, PLAIN);
@@ -161,11 +146,7 @@ fn each_reader_gets_its_stylesheet_delivery() {
             "{reader:?}"
         );
         // "run" lies outside the source <style>, so every reference in it is generated.
-        let parsed = stardict_io::open(&bundle, &Limits::default()).unwrap();
-        let mut dict = fs::File::open(&parsed.dictionary_path).unwrap();
-        let run = &parsed.entries[parsed.lookup("run")[0]];
-        let html =
-            stardict_io::read_payload(&mut dict, run, Limits::default().entry_bytes).unwrap();
+        let html = common::payload(&bundle, "run");
         assert_eq!(html.starts_with(LINK_TAG), delivery.link, "{reader:?}");
         assert_eq!(html.contains("<style>"), delivery.inline, "{reader:?}");
         assert!(html.contains(&format!("<div class=\"{class}\">")) && html.ends_with("</div>"));
@@ -181,12 +162,10 @@ fn verification_follows_the_recorded_reader_and_stylesheet() {
 
     let dir = tempfile::tempdir().unwrap();
     let (_, bundle) = converted(dir.path(), TargetReader::Koreader);
-    let path = bundle.join("manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    assert_eq!(manifest["reader"], "koreader");
-    manifest["reader"] = "readest".into();
-    fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    edit_manifest(&bundle, |manifest| {
+        assert_eq!(manifest["reader"], "koreader");
+        manifest["reader"] = "readest".into();
+    });
     assert!(mobi2star::verify(&bundle, None, &Limits::default()).is_err());
 }
 #[test]
@@ -197,11 +176,7 @@ fn bundles_from_another_version_get_a_clear_error() {
         mobi2star::verify_bundle(&bundle, None, &Limits::default()),
         Ok(mobi2star::ConversionReport::Compiled(_))
     ));
-    let path = bundle.join("manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    manifest["version"] = "0.0.0".into();
-    fs::write(&path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap();
+    edit_manifest(&bundle, |manifest| manifest["version"] = "0.0.0".into());
     assert!(matches!(
         mobi2star::verify(&bundle, None, &Limits::default()),
         Err(Error::Unsupported(message)) if message.contains("0.0.0")
