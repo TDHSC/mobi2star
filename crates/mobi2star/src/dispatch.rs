@@ -44,21 +44,25 @@ impl ConversionReport {
         }
     }
 }
-/// Resolves `Auto` to the backend the source calls for.
-fn select(source: &[u8], backend: Backend, limits: &Limits) -> Result<Backend> {
-    Ok(match backend {
-        Backend::Auto => {
-            if mobi_reader::Container::open(source, limits)?
-                .source_archive()?
-                .is_some()
-            {
-                Backend::Srcs
-            } else {
-                Backend::Compiled
-            }
+impl Backend {
+    /// The backend to run: `Auto` becomes the one the source calls for.
+    /// `source` is called only for `Auto`.
+    fn resolve<S: AsRef<[u8]>>(
+        self,
+        limits: &Limits,
+        source: impl FnOnce() -> Result<S>,
+    ) -> Result<Backend> {
+        if self != Backend::Auto {
+            return Ok(self);
         }
-        other => other,
-    })
+        let source = source()?;
+        let mobi = mobi_reader::Container::open(source.as_ref(), limits)?;
+        Ok(if mobi.source_archive()?.is_some() {
+            Backend::Srcs
+        } else {
+            Backend::Compiled
+        })
+    }
 }
 /// Converts to the full bundle, verified and published as `OUTPUT/bundle`.
 pub fn convert_with_backend(
@@ -68,11 +72,7 @@ pub fn convert_with_backend(
     options: OutputOptions,
     backend: Backend,
 ) -> Result<(PathBuf, ConversionReport)> {
-    let selected = match backend {
-        Backend::Auto => select(&read_bounded(input, limits.input_bytes)?, backend, limits)?,
-        other => other,
-    };
-    match selected {
+    match backend.resolve(limits, || read_bounded(input, limits.input_bytes))? {
         Backend::Srcs => {
             let (path, report) = crate::convert_source(input, output, limits, options)?;
             Ok((path, ConversionReport::Source(report)))
@@ -96,7 +96,7 @@ pub(crate) fn build_dictionary(
     progress: &mut dyn FnMut(Stage),
 ) -> Result<ConversionReport> {
     progress(Stage::Parsing);
-    Ok(match select(&source, backend, limits)? {
+    Ok(match backend.resolve(limits, || Ok(source.as_slice()))? {
         Backend::Srcs => ConversionReport::Source(crate::source_bundle::build_dictionary(
             &source, tree, folder, limits, options, progress,
         )?),
