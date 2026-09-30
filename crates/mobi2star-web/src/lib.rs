@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(target_arch = "wasm32")]
 mod bindings;
+pub mod preview;
 
 /// What the page lets the user choose. The backend is detected and the
 /// offset width stays at the portable 32 bits.
@@ -106,11 +107,36 @@ fn changed_while_read() -> Failure {
     }
 }
 
-/// The values the page offers, as JSON: `{"readers": [..], "labels": [..]}`.
+/// The values the page offers and the codes it translates, as JSON:
+/// `readers` and `labels` (the choices), `previews` (the readers each
+/// choice is previewed in), `apps` (each previewed reader's facts),
+/// `stays` (why a followed link can leave the view as it is) and
+/// `screens` (KOReader's device presets).
 pub fn choices() -> String {
+    let previews: serde_json::Map<String, serde_json::Value> = TargetReader::ALL
+        .iter()
+        .map(|&target| {
+            let name = serde_json::to_value(target).unwrap_or_default();
+            let apps =
+                serde_json::to_value(reader_view::App::for_target(target)).unwrap_or_default();
+            (name.as_str().unwrap_or_default().to_owned(), apps)
+        })
+        .collect();
+    let apps: serde_json::Map<String, serde_json::Value> = reader_view::App::ALL
+        .iter()
+        .map(|&app| {
+            let name = serde_json::to_value(app).unwrap_or_default();
+            let facts = serde_json::to_value(app.facts()).unwrap_or_default();
+            (name.as_str().unwrap_or_default().to_owned(), facts)
+        })
+        .collect();
     serde_json::json!({
         "readers": TargetReader::ALL,
         "labels": LabelLanguage::ALL,
+        "previews": previews,
+        "apps": apps,
+        "stays": reader_view::Stay::ALL,
+        "screens": reader_view::koreader::SCREENS,
     })
     .to_string()
 }
@@ -222,5 +248,17 @@ mod tests {
             serde_json::to_value(TargetReader::ALL).unwrap()
         );
         assert_eq!(choices["labels"], serde_json::json!(["en", "zh"]));
+        assert_eq!(
+            choices["previews"]["koreader"],
+            serde_json::json!(["koreader"])
+        );
+        assert_eq!(
+            choices["previews"]["universal"].as_array().unwrap().len(),
+            5
+        );
+        assert_eq!(choices["apps"]["koreader"]["engine"], "mupdf");
+        assert_eq!(choices["apps"]["readest"]["fidelity"], "same-rules");
+        assert_eq!(choices["stays"].as_array().unwrap().len(), 4);
+        assert_eq!(choices["screens"][0]["id"], "6in-300ppi");
     }
 }

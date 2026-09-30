@@ -103,3 +103,49 @@ pub fn convert(source: Source, choices: &str, progress: &Function) -> Result<Con
         .map(Converted)
         .map_err(thrown)
 }
+
+/// A converted dictionary opened for previewing it as a reader shows it.
+/// Methods answer in JSON; see `crate::preview`.
+#[wasm_bindgen]
+pub struct Preview(crate::preview::Session);
+#[wasm_bindgen]
+impl Preview {
+    /// Opens the zip in `source` (filled through `Source.forArchive`) for
+    /// the readers of the `--reader` choice `reader`.
+    #[wasm_bindgen(constructor)]
+    pub fn new(source: Source, reader: &str) -> Result<Preview, JsError> {
+        let zip = source.0.finish().map_err(thrown)?;
+        crate::preview::Session::open(zip, reader)
+            .map(Preview)
+            .map_err(thrown)
+    }
+    pub fn info(&self) -> String {
+        self.0.info()
+    }
+    pub fn search(&self, app: &str, word: &str) -> Result<String, JsError> {
+        self.0.search(app, word).map_err(thrown)
+    }
+    pub fn follow(&self, app: &str, href: &str, current: usize) -> Result<String, JsError> {
+        self.0.follow(app, href, current).map_err(thrown)
+    }
+    pub fn suggest(&self, prefix: &str, limit: usize) -> String {
+        self.0.suggest(prefix, limit)
+    }
+    #[wasm_bindgen(js_name = headwordAt)]
+    pub fn headword_at(&self, fraction: f64) -> Option<String> {
+        self.0.headword_at(fraction)
+    }
+    #[wasm_bindgen(js_name = koreaderGeometry)]
+    pub fn koreader_geometry(screen: &str, font_size: u32) -> Option<String> {
+        crate::preview::koreader_geometry(screen, font_size)
+    }
+    #[wasm_bindgen(js_name = koreaderFonts)]
+    pub fn koreader_fonts() -> String {
+        crate::preview::koreader_fonts()
+    }
+    /// The KOReader font file for a MuPDF font request, if any.
+    #[wasm_bindgen(js_name = koreaderFont)]
+    pub fn koreader_font(family: &str, script: &str, bold: bool, italic: bool) -> Option<String> {
+        reader_view::koreader::font_for(family, script, bold, italic).map(str::to_owned)
+    }
+}

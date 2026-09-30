@@ -501,6 +501,7 @@ dependencies = [
  "js-sys",
  "lexicon-core",
  "mobi2star",
+ "reader-view",
  "serde",
  "serde_json",
  "wasm-bindgen",

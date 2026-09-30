@@ -15,6 +15,8 @@ unsafe_code = "deny"
 [dependencies]
 mobi2star.workspace = true
 lexicon-core.workspace = true
+# AGPL-3.0-or-later: the WebAssembly build that includes it is AGPL as a whole.
+reader-view.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
