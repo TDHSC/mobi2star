@@ -73,7 +73,8 @@ function launch(chrome, profile) {
     ...(process.env.CI ? ['--no-sandbox'] : []),
     'about:blank',
   ];
-  const child = spawn(chrome, args, { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+  // Its own process group, so its helper processes can be stopped with it.
+  const child = spawn(chrome, args, { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'], detached: true });
   let log = '';
   child.stderr.on('data', (chunk) => (log = (log + chunk).slice(-4000)));
   const pending = new Map();
@@ -280,11 +281,22 @@ try {
   console.log('The page converts, previews, draws with MuPDF and keeps its frame in place.');
 } finally {
   if (failed) console.error(browser.log());
+  // Chrome's helpers can outlive its main process and keep writing to the
+  // profile, so the whole group is stopped, and removing the profile is
+  // tidying up that must not decide the test.
   const exited = new Promise((done) => browser.child.once('exit', done));
   if (browser.child.exitCode === null) {
-    browser.child.kill();
+    try {
+      process.kill(-browser.child.pid, 'SIGTERM');
+    } catch {
+      browser.child.kill();
+    }
     await exited;
   }
   server.close();
-  rmSync(profile, { recursive: true, force: true, maxRetries: 5 });
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    console.warn(`Left Chrome's profile at ${profile}: ${error.message}`);
+  }
 }
