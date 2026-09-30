@@ -1,7 +1,7 @@
 use crate::{
     bundle::{collect_files, report, RecordAudit, WrittenEntry, SCHEMA},
-    manifest::check_header,
-    Manifest, Report,
+    manifest::{self, check_header},
+    Manifest, Profile, Report,
 };
 use lexicon_core::{
     checked_member, hash_file, read_bounded, sha256, Document, Error, Limits, Metadata, Resource,
@@ -151,7 +151,7 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
     if root.symlink_metadata()?.file_type().is_symlink() {
         return Err(Error::Verify("bundle root cannot be a symlink".into()));
     }
-    let manifest_bytes = read_bounded(&checked_member(root, "manifest.json")?, 32 * 1024 * 1024)?;
+    let manifest_bytes = manifest::read(root, 32 * 1024 * 1024)?;
     check_header(&manifest_bytes, SCHEMA)?;
     let manifest: Manifest = serde_json::from_slice(&manifest_bytes)?;
     let style = manifest.reader.style_delivery();
@@ -270,7 +270,13 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
         &mut |entry| stardict_io::read_payload(&mut payload_file, entry, limits.entry_bytes),
     )?;
     let saved_report: Report = json(root, "report.json", 1024 * 1024)?;
-    let expected_report = report(&doc, &plan, parsed.offset_bits, manifest.reader);
+    let expected_report = report(
+        &doc,
+        &plan,
+        parsed.offset_bits,
+        manifest.reader,
+        Profile::Bundle,
+    );
     ensure(
         saved_report == expected_report,
         "report is not supported by source and output checks",

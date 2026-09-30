@@ -1,7 +1,12 @@
 //! Backend selection is explicit and fail-closed: an SRCS conversion failure
 //! propagates to the caller, preserving its diagnostics and rollback semantics.
-use crate::OutputOptions;
-use lexicon_core::{checked_member, read_bounded, Limits, Result};
+use crate::{
+    source_bundle::DICTIONARY_DIR,
+    transaction::{sync_tree, Transaction},
+    tree::{DiskTree, Tree},
+    OutputOptions, Stage,
+};
+use lexicon_core::{read_bounded, Limits, Result};
 use std::path::{Path, PathBuf};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum Backend {
@@ -39,6 +44,23 @@ impl ConversionReport {
         }
     }
 }
+/// Resolves `Auto` to the backend the source calls for.
+fn select(source: &[u8], backend: Backend, limits: &Limits) -> Result<Backend> {
+    Ok(match backend {
+        Backend::Auto => {
+            if mobi_reader::Container::open(source, limits)?
+                .source_archive()?
+                .is_some()
+            {
+                Backend::Srcs
+            } else {
+                Backend::Compiled
+            }
+        }
+        other => other,
+    })
+}
+/// Converts to the full bundle, verified and published as `OUTPUT/bundle`.
 pub fn convert_with_backend(
     input: &Path,
     output: &Path,
@@ -47,15 +69,7 @@ pub fn convert_with_backend(
     backend: Backend,
 ) -> Result<(PathBuf, ConversionReport)> {
     let selected = match backend {
-        Backend::Auto => {
-            let bytes = read_bounded(input, limits.input_bytes)?;
-            let mobi = mobi_reader::Container::open(&bytes, limits)?;
-            if mobi.source_archive()?.is_some() {
-                Backend::Srcs
-            } else {
-                Backend::Compiled
-            }
-        }
+        Backend::Auto => select(&read_bounded(input, limits.input_bytes)?, backend, limits)?,
         other => other,
     };
     match selected {
@@ -69,12 +83,63 @@ pub fn convert_with_backend(
         }
     }
 }
+/// Builds only the dictionary into `tree`, in the folder `folder` names
+/// from the book title (with a trailing `/`). Shared by the CLI's
+/// dictionary-only profile and the browser.
+pub(crate) fn build_dictionary(
+    source: Vec<u8>,
+    tree: &mut impl Tree,
+    folder: &dyn Fn(&str) -> String,
+    limits: &Limits,
+    options: OutputOptions,
+    backend: Backend,
+    progress: &mut dyn FnMut(Stage),
+) -> Result<ConversionReport> {
+    progress(Stage::Parsing);
+    Ok(match select(&source, backend, limits)? {
+        Backend::Srcs => ConversionReport::Source(crate::source_bundle::build_dictionary(
+            &source, tree, folder, limits, options, progress,
+        )?),
+        Backend::Compiled | Backend::Auto => ConversionReport::Compiled(
+            crate::bundle::build_dictionary(source, tree, folder, limits, options, progress)?,
+        ),
+    })
+}
+/// Converts to the dictionary-only profile and publishes `OUTPUT/bundle`
+/// holding `StarDict/` and `report.json`. It runs the checks that happen
+/// during conversion, but writes no manifest, so `verify` cannot check it
+/// later.
+pub fn convert_dictionary(
+    input: &Path,
+    output: &Path,
+    limits: &Limits,
+    options: OutputOptions,
+    backend: Backend,
+    progress: &mut dyn FnMut(Stage),
+) -> Result<(PathBuf, ConversionReport)> {
+    let source = read_bounded(input, limits.input_bytes)?;
+    let tx = Transaction::begin(output)?;
+    let root = tx.path()?;
+    let mut tree = DiskTree::new(root, limits);
+    let report = build_dictionary(
+        source,
+        &mut tree,
+        &|_| DICTIONARY_DIR.into(),
+        limits,
+        options,
+        backend,
+        progress,
+    )?;
+    tree.put_json("report.json", &report)?;
+    sync_tree(root)?;
+    Ok((tx.commit()?, report))
+}
 pub fn verify_bundle(
     root: &Path,
     source: Option<&Path>,
     limits: &Limits,
 ) -> Result<ConversionReport> {
-    let bytes = read_bounded(&checked_member(root, "manifest.json")?, 16 * 1024 * 1024)?;
+    let bytes = crate::manifest::read(root, 16 * 1024 * 1024)?;
     let manifest: serde_json::Value = serde_json::from_slice(&bytes)?;
     if manifest.get("backend").and_then(serde_json::Value::as_str)
         == Some(crate::source_bundle::BACKEND)

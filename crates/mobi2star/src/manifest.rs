@@ -2,8 +2,9 @@
 //! a bundle from another mobi2star version gets a clear message instead of a
 //! missing-field JSON error. Verification regenerates or replays output with
 //! the producing code, so it is version-specific by design.
-use lexicon_core::{Error, Result};
+use lexicon_core::{checked_member, read_bounded, Error, Result};
 use serde::Deserialize;
+use std::path::Path;
 
 pub(crate) const TOOL: &str = "mobi2star";
 
@@ -12,6 +13,17 @@ struct Header {
     schema: u32,
     tool: String,
     version: String,
+}
+
+/// Reads a bundle's manifest.json. Dictionary-only output has none, which
+/// gets its own message instead of a missing-file error.
+pub(crate) fn read(root: &Path, cap: usize) -> Result<Vec<u8>> {
+    if root.join("manifest.json").symlink_metadata().is_err() && root.join("StarDict").is_dir() {
+        return Err(Error::Unsupported(
+            "dictionary-only output (convert --profile stardict) has no manifest and cannot be verified; convert with the default bundle profile to get a verifiable bundle".into(),
+        ));
+    }
+    read_bounded(&checked_member(root, "manifest.json")?, cap)
 }
 
 pub(crate) fn check_header(manifest: &[u8], schema: u32) -> Result<()> {

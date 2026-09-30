@@ -231,6 +231,28 @@ pub fn read_payload<R: Read + Seek>(
     file.seek(SeekFrom::Start(entry.offset))?;
     let mut bytes = vec![0; entry.size as usize];
     file.read_exact(&mut bytes)?;
+    payload_text(bytes)
+}
+/// Reads the next payload from a `.dict` stream read front to back. `entry`
+/// must start where the previous payload ended; `position` tracks that.
+pub fn read_next_payload(
+    dict: &mut impl Read,
+    position: &mut u64,
+    entry: &IndexEntry,
+    limit: usize,
+) -> Result<String> {
+    if entry.offset != *position {
+        return Err(Error::Verify("DICT payloads are not in index order".into()));
+    }
+    if entry.size as usize > limit {
+        return Err(Error::Limit("payload allocation".into()));
+    }
+    let mut bytes = vec![0; entry.size as usize];
+    dict.read_exact(&mut bytes)?;
+    *position += u64::from(entry.size);
+    payload_text(bytes)
+}
+fn payload_text(bytes: Vec<u8>) -> Result<String> {
     let text =
         String::from_utf8(bytes).map_err(|_| Error::Verify("DICT payload is not UTF-8".into()))?;
     if text.contains('\0') {

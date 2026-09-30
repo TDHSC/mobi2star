@@ -4,6 +4,7 @@
 use lexicon_core::{sha256, Limits};
 use mobi_reader::pdb::PalmDatabase;
 use std::{
+    collections::BTreeMap,
     fs,
     io::{Cursor, Write},
     path::Path,
@@ -123,11 +124,9 @@ pub fn two_set_fixture() -> Vec<u8> {
         ])
     })
 }
-/// SHA-256 over sorted "path<TAB>sha256" lines for every file under `root`.
-/// The manifest's version field is blanked, so a version bump alone does not
-/// change the digest.
-pub fn bundle_digest(root: &Path) -> String {
-    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
+/// Every file under `root`, by `/`-separated relative path.
+pub fn tree_files(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    fn walk(root: &Path, dir: &Path, out: &mut BTreeMap<String, Vec<u8>>) {
         for entry in fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
@@ -139,17 +138,27 @@ pub fn bundle_digest(root: &Path) -> String {
                 .unwrap()
                 .to_string_lossy()
                 .replace('\\', "/");
-            let mut bytes = fs::read(&path).unwrap();
+            out.insert(name, fs::read(&path).unwrap());
+        }
+    }
+    let mut files = BTreeMap::new();
+    walk(root, root, &mut files);
+    files
+}
+/// SHA-256 over sorted "path<TAB>sha256" lines for every file under `root`.
+/// The manifest's version field is blanked, so a version bump alone does not
+/// change the digest.
+pub fn bundle_digest(root: &Path) -> String {
+    let lines: Vec<String> = tree_files(root)
+        .into_iter()
+        .map(|(name, mut bytes)| {
             if name == "manifest.json" {
                 let mut manifest: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
                 manifest["version"] = "".into();
                 bytes = serde_json::to_vec(&manifest).unwrap();
             }
-            out.push(format!("{name}\t{}", sha256(&bytes)));
-        }
-    }
-    let mut lines = Vec::new();
-    walk(root, root, &mut lines);
-    lines.sort();
+            format!("{name}\t{}", sha256(&bytes))
+        })
+        .collect();
     sha256(lines.join("\n").as_bytes())
 }

@@ -9,7 +9,9 @@ pub use catalog::{
     PayloadWriter,
 };
 use lexicon_core::{Error, Result};
-pub use reader::{check_payloads, dictionary_file, open, parse, read_payload, ParsedDictionary};
+pub use reader::{
+    check_payloads, dictionary_file, open, parse, read_next_payload, read_payload, ParsedDictionary,
+};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 pub use style::{stylesheet_files, stylesheet_paths};

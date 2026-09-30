@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 use clap::{Parser, Subcommand};
 use lexicon_core::{read_bounded, Error, LabelLanguage, Limits, Result, TargetReader};
-use mobi2star::{Backend, OutputOptions};
+use mobi2star::{Backend, OutputOptions, Profile};
 use std::{
     io::{self, Write},
     path::PathBuf,
@@ -42,6 +42,9 @@ enum Command {
         output: PathBuf,
         #[arg(long, value_enum, default_value_t = Backend::default())]
         backend: Backend,
+        /// What to publish in OUTPUT/bundle
+        #[arg(long, value_enum, default_value_t = Profile::default())]
+        profile: Profile,
         #[arg(
             long,
             default_value_t = OutputOptions::default().offset_bits,
@@ -118,6 +121,7 @@ fn run(cli: &Cli) -> Result<()> {
             output,
             offset_bits,
             backend,
+            profile,
             labels,
             reader,
         } => {
@@ -126,8 +130,19 @@ fn run(cli: &Cli) -> Result<()> {
                 labels: *labels,
                 reader: *reader,
             };
-            let (bundle, report) =
-                mobi2star::convert_with_backend(input, output, &limits, options, *backend)?;
+            let (bundle, report) = match profile {
+                Profile::Bundle => {
+                    mobi2star::convert_with_backend(input, output, &limits, options, *backend)?
+                }
+                Profile::Stardict => mobi2star::convert_dictionary(
+                    input,
+                    output,
+                    &limits,
+                    options,
+                    *backend,
+                    &mut |_| {},
+                )?,
+            };
             if cli.json {
                 stdout_json(&serde_json::json!({"bundle": bundle, "report": report}))?;
             } else {

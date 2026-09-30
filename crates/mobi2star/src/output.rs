@@ -13,6 +13,30 @@ pub struct OutputOptions {
     pub reader: TargetReader,
 }
 
+/// What a conversion produces.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum Profile {
+    /// The full bundle: dictionary, audit files, report and manifest; verifiable later
+    #[default]
+    Bundle,
+    /// Only StarDict/ and report.json, checked while converting; no manifest, so `verify` cannot check it later
+    Stardict,
+}
+
+/// Progress of a conversion, reported by count, never by time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "stage", rename_all = "kebab-case")]
+pub enum Stage {
+    /// Reading and cross-checking the source.
+    Parsing,
+    /// Rendering and writing payloads.
+    Rendering { done: usize, total: usize },
+    /// Writing the index files.
+    Writing,
+    /// Reading the output back and checking it.
+    Checking,
+}
+
 impl Default for OutputOptions {
     fn default() -> Self {
         Self {

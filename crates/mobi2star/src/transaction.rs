@@ -69,6 +69,16 @@ impl Drop for Transaction {
         }
     }
 }
+/// Syncs `root` and every directory below it.
+pub(crate) fn sync_tree(root: &Path) -> Result<()> {
+    for item in fs::read_dir(root)? {
+        let item = item?;
+        if item.file_type()?.is_dir() {
+            sync_tree(&item.path())?;
+        }
+    }
+    sync_directory(root)
+}
 pub(crate) fn sync_directory(path: &Path) -> Result<()> {
     #[cfg(unix)]
     {

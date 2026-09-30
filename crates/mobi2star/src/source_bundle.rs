@@ -2,11 +2,11 @@
 //! MOBI and compares the actual artifacts, in addition to an independent IDX reader.
 use crate::{
     bundle::collect_files,
-    dictionary::{check_written, DictionaryBuilder, DirReadBack, WrittenDictionary},
-    manifest::{check_header, TOOL},
-    transaction::{sync_directory, Transaction},
+    dictionary::{check_written, DictionaryBuilder, WrittenDictionary},
+    manifest::{self, check_header, TOOL},
+    transaction::{sync_tree, Transaction},
     tree::{DiskTree, Tree},
-    FileDigest, OutputOptions,
+    FileDigest, OutputOptions, Profile, Stage,
 };
 use lexicon_core::{
     checked_member, hash_file, read_bounded, sha256, Error, LabelLanguage, Limits, Resource,
@@ -19,7 +19,6 @@ use srcs_render::{browser, Plan, Rendered};
 use stardict_io::{ParsedDictionary, Payload};
 use std::{
     collections::BTreeSet,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -171,7 +170,8 @@ struct DictionaryFacts {
     articles: Vec<ArticleAudit>,
     images: Vec<ImageAudit>,
 }
-const DICTIONARY_DIR: &str = "StarDict/";
+/// Where the full bundle keeps the dictionary.
+pub(crate) const DICTIONARY_DIR: &str = "StarDict/";
 
 /// Parses the embedded publisher source, cross-checks it against the
 /// compiled MOBI and plans the rendering.
@@ -205,13 +205,15 @@ fn prepare<'s>(source: &'s [u8], limits: &Limits) -> Result<(Prepared<'s>, Audit
     Ok((prepared, audit))
 }
 
-/// Writes the StarDict dictionary under `StarDict/`: stylesheet and image
+/// Writes the StarDict dictionary under `dir`: stylesheet and image
 /// resources first, then every definition, chapter and image gallery.
 fn write_dictionary(
     tree: &mut impl Tree,
     prepared: &Prepared,
+    dir: &str,
     limits: &Limits,
     options: OutputOptions,
+    progress: &mut dyn FnMut(Stage),
 ) -> Result<DictionaryFacts> {
     let Prepared {
         source,
@@ -224,12 +226,12 @@ fn write_dictionary(
     let text = options.labels.text();
     let style = options.reader.style_delivery();
     for (path, bytes) in stardict_io::stylesheet_files(&plan.stylesheet(), style) {
-        tree.put(&format!("{DICTIONARY_DIR}{path}"), bytes)?;
+        tree.put(&format!("{dir}{path}"), bytes)?;
     }
     let mut images = Vec::new();
     for (file, bytes) in &book.files {
         if !book.pages.contains_key(file) {
-            tree.put(&format!("{DICTIONARY_DIR}res/source/{file}"), bytes)?;
+            tree.put(&format!("{dir}res/source/{file}"), bytes)?;
         }
         if mobi_reader::container::image_type(bytes).is_some() {
             let (width, height) = srcs_reader::validate_image(bytes, limits.text_bytes)?;
@@ -246,10 +248,7 @@ fn write_dictionary(
     for resource in resources {
         let bytes = resource.source_span.bytes(source)?;
         let (width, height) = srcs_reader::validate_image(bytes, limits.text_bytes)?;
-        tree.put(
-            &format!("{DICTIONARY_DIR}res/compiled/{}", resource.filename),
-            bytes,
-        )?;
+        tree.put(&format!("{dir}res/compiled/{}", resource.filename), bytes)?;
         images.push(ImageAudit {
             file: resource.filename.clone(),
             origin: format!("pdb_record_{}", resource.pdb_record),
@@ -269,7 +268,10 @@ fn write_dictionary(
     let source_gallery = gallery_items(true, "source");
     let compiled_gallery = gallery_items(false, "compiled");
 
-    let mut builder = DictionaryBuilder::start(tree, DICTIONARY_DIR, limits, options.offset_bits)?;
+    // Definitions, chapters and the two galleries.
+    let total = book.entries.len() + plan.page_ids.len() + 2;
+    let mut builder =
+        DictionaryBuilder::start(tree, dir, limits, options.offset_bits, total, progress)?;
     let mut articles = Vec::new();
     for entry in &book.entries {
         let rendered = plan.definition(book, entry, style)?;
@@ -516,7 +518,12 @@ fn write_extras(
     Ok(())
 }
 
-fn report(prepared: &Prepared, facts: &DictionaryFacts, options: OutputOptions) -> SourceReport {
+fn report(
+    prepared: &Prepared,
+    facts: &DictionaryFacts,
+    options: OutputOptions,
+    profile: Profile,
+) -> SourceReport {
     let Prepared {
         namespace,
         book,
@@ -532,22 +539,61 @@ fn report(prepared: &Prepared, facts: &DictionaryFacts, options: OutputOptions) 
         .iter()
         .filter(|i| i.origin == "source_zip")
         .count();
-    SourceReport{
-        schema:SCHEMA,backend:BACKEND.into(),implemented_content_checks_passed:true,rendering_status:"unverified_reader_dependent".into(),layout_profile:plan.layout_profile.clone(),
-        source_sha256:namespace.clone(),source_archive_sha256:book.archive_sha256.clone(),source_headwords:book.orths.len(),source_aliases:book.forms.len(),
-        definitions:book.entries.len(),chapters:book.pages.len(),supplement_entries:book.pages.len()+2,
-        output_entries:catalog.index.len(),output_synonyms:catalog.synonyms.len(),source_body_bytes:book.source_body_bytes(),covered_source_body_bytes:book.source_body_bytes(),
-        rawml_bytes:*rawml_bytes,source_files:book.files.len(),source_images,compiled_images:resources.len(),internal_links:plan.links.len(),
-        external_links:book.pages.values().map(|p|p.links.iter().filter(|l|l.target.is_none()).count()).sum(),
-        source_image_references:book.pages.values().map(|p|p.images.len()).sum(),classified_pdb_records:*classified_pdb_records,skipped_entries:0,offset_bits:options.offset_bits,reader:options.reader,
-        verification_scope:vec!["SRCS/compiled headword and inflection multisets with ownership and multiplicity".into(),
-            "Every definition's whitespace-normalized visible text agrees with compiled MOBI".into(),
-            "Every source chapter body is rendered by byte-preserving edits; all ZIP files retained exactly".into(),
-            "All raster images decoded and retained; source link targets resolved".into(),
-            "Actual StarDict index, synonyms and shared payload ranges independently read back".into(),
-            "Complete bundle regenerated from original MOBI before atomic publication".into(),
-            "Display/layout equivalence and reading-system behavior require reader acceptance".into()],
+    SourceReport {
+        schema: SCHEMA,
+        backend: BACKEND.into(),
+        implemented_content_checks_passed: true,
+        rendering_status: "unverified_reader_dependent".into(),
+        layout_profile: plan.layout_profile.clone(),
+        source_sha256: namespace.clone(),
+        source_archive_sha256: book.archive_sha256.clone(),
+        source_headwords: book.orths.len(),
+        source_aliases: book.forms.len(),
+        definitions: book.entries.len(),
+        chapters: book.pages.len(),
+        supplement_entries: book.pages.len() + 2,
+        output_entries: catalog.index.len(),
+        output_synonyms: catalog.synonyms.len(),
+        source_body_bytes: book.source_body_bytes(),
+        covered_source_body_bytes: book.source_body_bytes(),
+        rawml_bytes: *rawml_bytes,
+        source_files: book.files.len(),
+        source_images,
+        compiled_images: resources.len(),
+        internal_links: plan.links.len(),
+        external_links: book
+            .pages
+            .values()
+            .map(|p| p.links.iter().filter(|l| l.target.is_none()).count())
+            .sum(),
+        source_image_references: book.pages.values().map(|p| p.images.len()).sum(),
+        classified_pdb_records: *classified_pdb_records,
+        skipped_entries: 0,
+        offset_bits: options.offset_bits,
+        reader: options.reader,
+        verification_scope: verification_scope(profile),
     }
+}
+/// The checks each profile runs. Only the full bundle keeps every source
+/// file and is regenerated before publication.
+fn verification_scope(profile: Profile) -> Vec<String> {
+    let full = profile == Profile::Bundle;
+    let mut scope = vec![
+        "SRCS/compiled headword and inflection multisets with ownership and multiplicity",
+        "Every definition's whitespace-normalized visible text agrees with compiled MOBI",
+        if full {
+            "Every source chapter body is rendered by byte-preserving edits; all ZIP files retained exactly"
+        } else {
+            "Every source chapter body is rendered by byte-preserving edits"
+        },
+        "All raster images decoded and retained; source link targets resolved",
+        "Actual StarDict index, synonyms and shared payload ranges independently read back",
+    ];
+    if full {
+        scope.push("Complete bundle regenerated from original MOBI before atomic publication");
+    }
+    scope.push("Display/layout equivalence and reading-system behavior require reader acceptance");
+    scope.into_iter().map(String::from).collect()
 }
 
 const README: &[u8] = b"mobi2star native Rust source bundle\n\nStarDict/: import the whole directory including res/.\nBrowser/index.html: offline viewer (JavaScript runs only in your browser).\nSource/: byte-exact original publisher-source files.\nAudit/: original MOBI, embedded ZIP, decompressed compiled text and provenance.\n\nContent checks are scoped in report.json. Reader rendering remains unverified.\nVerify with: mobi2star verify BUNDLE --source ORIGINAL.mobi --json\n";
@@ -609,27 +655,45 @@ fn build(
 ) -> Result<SourceReport> {
     let (prepared, audit) = prepare(source, limits)?;
     let mut tree = DiskTree::new(root, limits);
-    let facts = write_dictionary(&mut tree, &prepared, limits, options)?;
-    // A separately implemented reader checks the files just written, including
-    // all duplicate headwords, alias ordinals and exact shared physical ranges.
-    let parsed = check_written(&mut DirReadBack(root), &facts.written, limits)?;
+    let facts = write_dictionary(
+        &mut tree,
+        &prepared,
+        DICTIONARY_DIR,
+        limits,
+        options,
+        &mut |_| {},
+    )?;
+    let parsed = check_written(&mut *tree.readback()?, &facts.written, limits)?;
     check_routes(&parsed, &prepared, &facts.articles)?;
     write_extras(&mut tree, &prepared, &audit, &facts, options.labels)?;
-    let report = report(&prepared, &facts, options);
+    let report = report(&prepared, &facts, options, Profile::Bundle);
     tree.put_json("report.json", &report)?;
     tree.put("README.txt", README)?;
     write_manifest(&mut tree, root, prepared.namespace.clone(), options, limits)?;
     sync_tree(root)?;
     Ok(report)
 }
-fn sync_tree(root: &Path) -> Result<()> {
-    for item in fs::read_dir(root)? {
-        let item = item?;
-        if item.file_type()?.is_dir() {
-            sync_tree(&item.path())?;
-        }
-    }
-    sync_directory(root)
+
+/// Builds only the dictionary, in the folder `folder` names from the book
+/// title, with the checks that run during conversion: the independent
+/// readback and every internal route. The compiled-side audit inputs are
+/// dropped as soon as the cross-check has passed.
+pub(crate) fn build_dictionary(
+    source: &[u8],
+    tree: &mut impl Tree,
+    folder: &dyn Fn(&str) -> String,
+    limits: &Limits,
+    options: OutputOptions,
+    progress: &mut dyn FnMut(Stage),
+) -> Result<SourceReport> {
+    let (prepared, audit) = prepare(source, limits)?;
+    drop(audit);
+    let dir = folder(&prepared.book.package.title);
+    let facts = write_dictionary(tree, &prepared, &dir, limits, options, progress)?;
+    progress(Stage::Checking);
+    let parsed = check_written(&mut *tree.readback()?, &facts.written, limits)?;
+    check_routes(&parsed, &prepared, &facts.articles)?;
+    Ok(report(&prepared, &facts, options, Profile::Stardict))
 }
 
 pub fn convert_source(
@@ -656,7 +720,7 @@ pub fn verify_source(
     original: Option<&Path>,
     limits: &Limits,
 ) -> Result<SourceReport> {
-    let manifest_bytes = read_bounded(&checked_member(root, "manifest.json")?, 16 * 1024 * 1024)?;
+    let manifest_bytes = manifest::read(root, 16 * 1024 * 1024)?;
     check_header(&manifest_bytes, SCHEMA)?;
     let manifest: SourceManifest = serde_json::from_slice(&manifest_bytes)?;
     if manifest.backend != BACKEND || !matches!(manifest.offset_bits, 32 | 64) {

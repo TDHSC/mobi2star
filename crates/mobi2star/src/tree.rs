@@ -1,11 +1,11 @@
 //! Where conversion output goes. The conversion stages write through the
 //! `Tree` trait, so the same code fills a directory on disk (CLI) or a zip
 //! archive in memory (browser).
-use lexicon_core::{Error, Limits, Result};
+use lexicon_core::{checked_member, read_bounded, Error, Limits, Result};
 use serde::Serialize;
 use std::{
     fs::{self, File, OpenOptions},
-    io::{BufWriter, Write},
+    io::{BufReader, BufWriter, Read, Write},
     path::Path,
 };
 
@@ -23,11 +23,35 @@ pub(crate) trait Tree {
     fn end_stream(&mut self) -> Result<u64>;
     /// Bytes written so far, counted against the output budget.
     fn used(&self) -> u64;
+    /// Reads back what has been written, to check it. A tree that can only
+    /// be read once complete (an archive) is finished by this call and
+    /// accepts no further files.
+    fn readback(&mut self) -> Result<Box<dyn ReadBack + '_>>;
     /// Writes `value` as pretty JSON with a trailing newline.
     fn put_json<T: Serialize + ?Sized>(&mut self, path: &str, value: &T) -> Result<()> {
         let mut bytes = serde_json::to_vec_pretty(value)?;
         bytes.push(b'\n');
         self.put(path, &bytes)
+    }
+}
+
+/// Reads finished output back for checking.
+pub(crate) trait ReadBack {
+    fn read(&mut self, path: &str, limit: usize) -> Result<Vec<u8>>;
+    /// A reader over `path` and its length.
+    fn open(&mut self, path: &str) -> Result<(Box<dyn Read + '_>, u64)>;
+}
+
+/// Output files in a directory.
+struct DirReadBack<'a>(&'a Path);
+impl ReadBack for DirReadBack<'_> {
+    fn read(&mut self, path: &str, limit: usize) -> Result<Vec<u8>> {
+        read_bounded(&checked_member(self.0, path)?, limit)
+    }
+    fn open(&mut self, path: &str) -> Result<(Box<dyn Read + '_>, u64)> {
+        let file = File::open(checked_member(self.0, path)?)?;
+        let length = file.metadata()?.len();
+        Ok((Box::new(BufReader::new(file)), length))
     }
 }
 
@@ -137,6 +161,12 @@ impl Tree for DiskTree<'_> {
     }
     fn used(&self) -> u64 {
         self.budget.used()
+    }
+    fn readback(&mut self) -> Result<Box<dyn ReadBack + '_>> {
+        if self.stream.is_some() {
+            return Err(Error::Incomplete("a stream is still open".into()));
+        }
+        Ok(Box::new(DirReadBack(self.root)))
     }
 }
 

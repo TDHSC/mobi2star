@@ -3,16 +3,15 @@
 //!
 //! Writing and checking are separate steps: a zip archive can only be read
 //! back once it is finished, while a directory can be read back at once.
-use crate::tree::Tree;
-use lexicon_core::{checked_member, read_bounded, sha256, Error, Limits, Result};
+use crate::{
+    tree::{ReadBack, Tree},
+    Stage,
+};
+use lexicon_core::{sha256, Error, Limits, Result};
 use stardict_io::{
     CatalogAlias, CatalogItem, EncodedCatalog, ParsedDictionary, Payload, PayloadWriter,
 };
-use std::{
-    fs::File,
-    io::{self, Read, Write},
-    path::Path,
-};
+use std::io::{self, Write};
 
 /// Makes the tree's open stream usable as the payload writer's sink while
 /// the builder holds the only borrow of the tree.
@@ -34,12 +33,14 @@ impl<T: Tree> Write for TreeStream<'_, T> {
 /// Builds `{dir}dictionary.dict/.idx/.syn/.ifo` in a tree. Stylesheet and
 /// resource files must be written before `start`, because the tree has one
 /// stream open for the payloads until `finish`.
-pub(crate) struct DictionaryBuilder<'t, T: Tree> {
+pub(crate) struct DictionaryBuilder<'t, 'p, T: Tree> {
     dir: String,
     payloads: PayloadWriter<TreeStream<'t, T>>,
     digests: Vec<(Payload, String)>,
     items: Vec<CatalogItem>,
     aliases: Vec<CatalogAlias>,
+    progress: &'p mut dyn FnMut(Stage),
+    total: usize,
 }
 
 /// What a finished builder wrote, kept for checking it and for audits.
@@ -51,10 +52,17 @@ pub(crate) struct WrittenDictionary {
     pub aliases: Vec<CatalogAlias>,
 }
 
-impl<'t, T: Tree> DictionaryBuilder<'t, T> {
-    /// Opens `{dir}dictionary.dict`. Payloads may use whatever output budget
-    /// the tree has left.
-    pub fn start(tree: &'t mut T, dir: &str, limits: &Limits, bits: u8) -> Result<Self> {
+impl<'t, 'p, T: Tree> DictionaryBuilder<'t, 'p, T> {
+    /// Opens `{dir}dictionary.dict` for `total` payloads. Payloads may use
+    /// whatever output budget the tree has left.
+    pub fn start(
+        tree: &'t mut T,
+        dir: &str,
+        limits: &Limits,
+        bits: u8,
+        total: usize,
+        progress: &'p mut dyn FnMut(Stage),
+    ) -> Result<Self> {
         let mut payload_limits = limits.clone();
         payload_limits.output_bytes = limits.output_bytes.saturating_sub(tree.used());
         tree.stream(&format!("{dir}dictionary.dict"))?;
@@ -64,12 +72,20 @@ impl<'t, T: Tree> DictionaryBuilder<'t, T> {
             digests: Vec::new(),
             items: Vec::new(),
             aliases: Vec::new(),
+            progress,
+            total,
         })
     }
     /// Appends one HTML payload and records its digest for the readback.
+    /// Progress is reported about 200 times per dictionary, by count.
     pub fn append(&mut self, html: &[u8]) -> Result<Payload> {
         let payload = self.payloads.append(html)?;
         self.digests.push((payload, sha256(html)));
+        let done = self.digests.len();
+        let total = self.total.max(done);
+        if done % (total / 200).max(1) == 0 || done == total {
+            (self.progress)(Stage::Rendering { done, total });
+        }
         Ok(payload)
     }
     pub fn item(&mut self, id: u64, word: String, payload: Payload) {
@@ -80,6 +96,7 @@ impl<'t, T: Tree> DictionaryBuilder<'t, T> {
     }
     /// Closes the payload stream and writes the index files.
     pub fn finish(self, title: &str, bits: u8, limits: &Limits) -> Result<WrittenDictionary> {
+        (self.progress)(Stage::Writing);
         let (TreeStream(tree), _) = self.payloads.into_inner()?;
         let dictionary_bytes = tree.end_stream()?;
         let encoded = stardict_io::encode_catalog(
@@ -104,31 +121,11 @@ impl<'t, T: Tree> DictionaryBuilder<'t, T> {
     }
 }
 
-/// Reads finished output back for checking.
-pub(crate) trait ReadBack {
-    fn read(&mut self, path: &str, limit: usize) -> Result<Vec<u8>>;
-    /// A reader over `path` and its length.
-    fn open(&mut self, path: &str) -> Result<(Box<dyn Read + '_>, u64)>;
-}
-
-/// Output files in a directory.
-pub(crate) struct DirReadBack<'a>(pub &'a Path);
-impl ReadBack for DirReadBack<'_> {
-    fn read(&mut self, path: &str, limit: usize) -> Result<Vec<u8>> {
-        read_bounded(&checked_member(self.0, path)?, limit)
-    }
-    fn open(&mut self, path: &str) -> Result<(Box<dyn Read + '_>, u64)> {
-        let file = File::open(checked_member(self.0, path)?)?;
-        let length = file.metadata()?.len();
-        Ok((Box::new(io::BufReader::new(file)), length))
-    }
-}
-
 /// Reads the dictionary back from `output` and checks it independently of
 /// the writer: the parsed index and synonyms must equal the catalog, and
 /// every payload must hash to what was appended.
 pub(crate) fn check_written(
-    output: &mut impl ReadBack,
+    output: &mut dyn ReadBack,
     written: &WrittenDictionary,
     limits: &Limits,
 ) -> Result<ParsedDictionary> {

@@ -1,9 +1,10 @@
 use crate::{
-    dictionary::{check_written, DictionaryBuilder, DirReadBack, WrittenDictionary},
+    dictionary::{check_written, DictionaryBuilder, WrittenDictionary},
     manifest::TOOL,
     transaction::{sync_directory, Transaction},
     tree::{DiskTree, Tree},
-    OutputOptions,
+    verify::check_entries,
+    OutputOptions, Profile, Stage,
 };
 use html_preserve::Plan;
 use lexicon_core::{
@@ -123,27 +124,45 @@ pub(crate) struct CompiledDictionary {
     pub written: WrittenDictionary,
     pub rows: Vec<WrittenEntry>,
 }
-/// Writes the stylesheet, image resources and every entry in StarDict order.
-pub(crate) fn write_dictionary(
+/// The dictionary's title, with a fallback for books that have none.
+fn title(document: &Document) -> &str {
+    if document.metadata.title.is_empty() {
+        "Converted MOBI dictionary"
+    } else {
+        &document.metadata.title
+    }
+}
+/// Writes the stylesheet, image resources and every entry in StarDict order
+/// under `dir`.
+fn write_dictionary(
     tree: &mut impl Tree,
     document: &Document,
     plan: &Plan,
+    dir: &str,
     limits: &Limits,
     options: OutputOptions,
+    progress: &mut dyn FnMut(Stage),
 ) -> Result<CompiledDictionary> {
     let style = options.reader.style_delivery();
     for (path, bytes) in stardict_io::stylesheet_files(&plan.stylesheet, style) {
-        tree.put(&path, bytes)?;
+        tree.put(&format!("{dir}{path}"), bytes)?;
     }
     for resource in &document.resources {
         tree.put(
-            &format!("res/{}", resource.filename),
+            &format!("{dir}res/{}", resource.filename),
             resource.source_span.bytes(&document.source)?,
         )?;
     }
     let mut ordered: Vec<&Entry> = document.entries.iter().collect();
     ordered.sort_by(|a, b| compare_words(&a.headword, &b.headword).then(a.id.cmp(&b.id)));
-    let mut builder = DictionaryBuilder::start(tree, "", limits, options.offset_bits)?;
+    let mut builder = DictionaryBuilder::start(
+        tree,
+        dir,
+        limits,
+        options.offset_bits,
+        ordered.len(),
+        progress,
+    )?;
     let mut rows = Vec::new();
     for entry in ordered {
         let html = html_preserve::render(document, entry, plan, style)?;
@@ -162,12 +181,7 @@ pub(crate) fn write_dictionary(
             rendered_sha256: sha256(html.as_bytes()),
         });
     }
-    let title = if document.metadata.title.is_empty() {
-        "Converted MOBI dictionary"
-    } else {
-        &document.metadata.title
-    };
-    let written = builder.finish(title, options.offset_bits, limits)?;
+    let written = builder.finish(title(document), options.offset_bits, limits)?;
     for row in &mut rows {
         row.ordinal = written.encoded.catalog.ordinals[&row.entry.id];
     }
@@ -178,8 +192,9 @@ pub(crate) fn report(
     plan: &Plan,
     offset_bits: u8,
     reader: TargetReader,
+    profile: Profile,
 ) -> Report {
-    Report { schema: SCHEMA, implemented_content_checks_passed: true, rendering_status: "unverified_reader_dependent".into(),
+    let mut report = Report { schema: SCHEMA, implemented_content_checks_passed: true, rendering_status: "unverified_reader_dependent".into(),
         source_headwords: doc.source_headwords, source_aliases: doc.source_aliases,
         supplement_entries: doc.entries.iter().filter(|e| e.kind == EntryKind::Supplement).count(),
         output_entries: doc.entries.len(), output_synonyms: doc.source_aliases + doc.entries.len(),
@@ -192,8 +207,52 @@ pub(crate) fn report(
             "Internal links use stable entry aliases plus exact byte-position anchors; fragment navigation must be acceptance-tested in the target reader.".into(),
             "Images are copied byte-for-byte after signature recognition; image decoding and rendered appearance are not verified.".into(),
             "Source <style> bodies are scoped under the book's wrapper class to form dictionary.css; payloads sit in that wrapper and reference the stylesheet as the recorded reader needs (res/ link, inline copies or both). A <style> element inside an entry stays in that entry as source bytes. Container context and reader CSS can still change appearance.".into(),
-            "The manifest detects accidental changes, not malicious replacement: it is not digitally signed.".into(),
-        ] }
+        ] };
+    if profile == Profile::Bundle {
+        report.notes.push("The manifest detects accidental changes, not malicious replacement: it is not digitally signed.".into());
+    }
+    report
+}
+
+/// Builds only the dictionary, in the folder `folder` names from the book
+/// title, and checks it as `verify` checks a bundle's dictionary: the
+/// independent readback, then every entry against the source Document and
+/// a replay of its edits, read from the written output.
+pub(crate) fn build_dictionary(
+    source: Vec<u8>,
+    tree: &mut impl Tree,
+    folder: &dyn Fn(&str) -> String,
+    limits: &Limits,
+    options: OutputOptions,
+    progress: &mut dyn FnMut(Stage),
+) -> Result<Report> {
+    let document = mobi_reader::read(source, limits, options.labels)?;
+    let plan = html_preserve::build(&document, limits)?;
+    let dir = folder(title(&document));
+    let compiled = write_dictionary(tree, &document, &plan, &dir, limits, options, progress)?;
+    progress(Stage::Checking);
+    let mut output = tree.readback()?;
+    let parsed = check_written(&mut *output, &compiled.written, limits)?;
+    let (mut dict, _) = output.open(&format!("{dir}dictionary.dict"))?;
+    let mut position = 0;
+    let mut rows = compiled.rows.into_iter();
+    check_entries(
+        &document,
+        &plan,
+        &parsed,
+        options.reader.style_delivery(),
+        &mut || Ok(rows.next()),
+        &mut |entry| {
+            stardict_io::read_next_payload(&mut dict, &mut position, entry, limits.entry_bytes)
+        },
+    )?;
+    Ok(report(
+        &document,
+        &plan,
+        options.offset_bits,
+        options.reader,
+        Profile::Stardict,
+    ))
 }
 
 /// Return the final bundle path only after the verifier has reopened the staged files.
@@ -216,8 +275,16 @@ pub fn convert(
     fs::create_dir(root.join("archive"))?;
     fs::create_dir(root.join("res"))?;
     let mut tree = DiskTree::new(root, limits);
-    let compiled = write_dictionary(&mut tree, &document, &plan, limits, options)?;
-    check_written(&mut DirReadBack(root), &compiled.written, limits)?;
+    let compiled = write_dictionary(
+        &mut tree,
+        &document,
+        &plan,
+        "",
+        limits,
+        options,
+        &mut |_| {},
+    )?;
+    check_written(&mut *tree.readback()?, &compiled.written, limits)?;
     tree.put("archive/source.mobi", &document.source)?;
     tree.put("archive/rawml.bin", &document.rawml)?;
     tree.put_json("archive/metadata.json", &document.metadata)?;
@@ -243,7 +310,7 @@ pub fn convert(
         entries.write_all(b"\n")?;
     }
     tree.end_stream()?;
-    let report = report(&document, &plan, offset_bits, reader);
+    let report = report(&document, &plan, offset_bits, reader, Profile::Bundle);
     tree.put_json("report.json", &report)?;
     let files = collect_files(root)?
         .into_iter()

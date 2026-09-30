@@ -8,12 +8,13 @@ mod transaction;
 mod tree;
 mod verify;
 pub use bundle::{convert, FileDigest, Manifest, Report};
-pub use output::OutputOptions;
+pub use output::{OutputOptions, Profile, Stage};
 pub use verify::verify;
 
 mod dispatch;
 mod source_bundle;
 pub use dispatch::{
-    convert_with_backend, dictionary_root, verify_bundle, Backend, ConversionReport,
+    convert_dictionary, convert_with_backend, dictionary_root, verify_bundle, Backend,
+    ConversionReport,
 };
 pub use source_bundle::{convert_source, verify_source, SourceReport};
