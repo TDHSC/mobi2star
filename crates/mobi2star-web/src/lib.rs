@@ -48,9 +48,53 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-/// The largest file the page accepts, checked before reading it.
-pub fn max_input_bytes() -> usize {
-    Limits::browser().input_bytes
+/// A file read in chunks straight into one buffer of its declared size, so
+/// memory never holds a second whole copy of it.
+#[derive(Debug)]
+pub struct SourceBuffer {
+    bytes: Vec<u8>,
+    size: usize,
+}
+impl SourceBuffer {
+    /// Reserves room for a file of `size` bytes, refusing files over the
+    /// browser limit and sizes memory cannot hold.
+    pub fn new(size: usize) -> Result<Self, Failure> {
+        let limit = Limits::browser().input_bytes;
+        if size > limit {
+            return Err(Failure {
+                code: "LIMIT",
+                message: format!("the file has {size} bytes; the browser limit is {limit}"),
+            });
+        }
+        let mut bytes = Vec::new();
+        bytes.try_reserve_exact(size).map_err(|_| Failure {
+            code: "LIMIT",
+            message: format!("not enough memory for a file of {size} bytes"),
+        })?;
+        Ok(Self { bytes, size })
+    }
+    /// Appends the next chunk of the file.
+    pub fn push(&mut self, chunk: &[u8]) -> Result<(), Failure> {
+        if chunk.len() > self.size - self.bytes.len() {
+            return Err(changed_while_read());
+        }
+        self.bytes.extend_from_slice(chunk);
+        Ok(())
+    }
+    /// The whole file, once every chunk has arrived.
+    pub fn finish(self) -> Result<Vec<u8>, Failure> {
+        if self.bytes.len() == self.size {
+            Ok(self.bytes)
+        } else {
+            Err(changed_while_read())
+        }
+    }
+}
+fn changed_while_read() -> Failure {
+    Failure {
+        code: "IO",
+        message: "the file changed size while it was read".into(),
+    }
 }
 
 /// The values the page offers, as JSON: `{"readers": [..], "labels": [..]}`.
@@ -144,6 +188,19 @@ mod tests {
             let failure = convert(HUFF.to_vec(), bad, &mut |_| {}).unwrap_err();
             assert_eq!(failure.code, "OPTIONS");
         }
+    }
+    #[test]
+    fn source_buffers_hold_exactly_the_declared_size() {
+        let mut source = SourceBuffer::new(5).unwrap();
+        source.push(b"ab").unwrap();
+        source.push(b"cde").unwrap();
+        assert!(source.push(b"f").is_err(), "more than declared");
+        assert_eq!(source.finish().unwrap(), b"abcde");
+        let mut short = SourceBuffer::new(3).unwrap();
+        short.push(b"ab").unwrap();
+        assert_eq!(short.finish().unwrap_err().code, "IO");
+        let limit = Limits::browser().input_bytes;
+        assert_eq!(SourceBuffer::new(limit + 1).unwrap_err().code, "LIMIT");
     }
     #[test]
     fn choices_list_every_value() {

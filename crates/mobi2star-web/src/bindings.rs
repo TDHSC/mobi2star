@@ -30,10 +30,26 @@ pub fn version() -> String {
     crate::version().into()
 }
 
-/// The largest file the page accepts, checked before reading it.
-#[wasm_bindgen(js_name = maxInputBytes)]
-pub fn max_input_bytes() -> usize {
-    crate::max_input_bytes()
+fn thrown(failure: crate::Failure) -> JsError {
+    JsError::new(&format!("{}: {}", failure.code, failure.message))
+}
+
+/// The file to convert, filled chunk by chunk from `File.stream()` so the
+/// page never holds a second whole copy of it.
+#[wasm_bindgen]
+pub struct Source(crate::SourceBuffer);
+#[wasm_bindgen]
+impl Source {
+    /// Reserves room for `size` bytes. Throws `LIMIT: ...` for files over
+    /// the browser limit or too large for memory.
+    #[wasm_bindgen(constructor)]
+    pub fn new(size: usize) -> Result<Source, JsError> {
+        crate::SourceBuffer::new(size).map(Source).map_err(thrown)
+    }
+    /// Appends the next chunk of the file.
+    pub fn push(&mut self, chunk: &[u8]) -> Result<(), JsError> {
+        self.0.push(chunk).map_err(thrown)
+    }
 }
 
 /// The page's reader and label choices as JSON.
@@ -63,18 +79,19 @@ impl Converted {
     }
 }
 
-/// Converts a MOBI dictionary. `progress` is called with each stage as
-/// JSON, e.g. `{"stage":"rendering","done":10,"total":200}`. Throws an
-/// Error whose message is `CODE: detail`.
+/// Converts a MOBI dictionary, consuming `source`. `progress` is called with
+/// each stage as JSON, e.g. `{"stage":"rendering","done":10,"total":200}`.
+/// Throws an Error whose message is `CODE: detail`.
 #[wasm_bindgen]
-pub fn convert(source: Vec<u8>, choices: &str, progress: &Function) -> Result<Converted, JsError> {
+pub fn convert(source: Source, choices: &str, progress: &Function) -> Result<Converted, JsError> {
     let mut report = |stage: mobi2star::Stage| {
         if let Ok(json) = serde_json::to_string(&stage) {
             // A failing progress callback must not stop the conversion.
             let _ = progress.call1(&JsValue::NULL, &JsValue::from_str(&json));
         }
     };
+    let source = source.0.finish().map_err(thrown)?;
     crate::convert(source, choices, &mut report)
         .map(Converted)
-        .map_err(|failure| JsError::new(&format!("{}: {}", failure.code, failure.message)))
+        .map_err(thrown)
 }

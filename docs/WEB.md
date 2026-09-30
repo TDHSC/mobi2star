@@ -16,8 +16,8 @@ The page runs the CLI's dictionary-only profile, `convert --profile stardict`:
 |---|---|
 | `mobi2star::convert_dictionary_zip` | The pipeline: parse, write the dictionary through a `ZipTree`, read it back and check it. Uses no filesystem and no clock. |
 | `crates/mobi2star-web` | The page's converter: its choices, `Limits::browser()`, and a summary. Plain Rust that builds and tests natively. |
-| `crates/mobi2star-web/src/bindings.rs` | wasm-bindgen exports, compiled only for `wasm32`: `convert`, `choices`, `version`, `maxInputBytes` and `lastPanic`. |
-| `web/worker.js` | Runs one conversion. The page starts a worker per conversion and terminates it afterwards, which frees its memory and implements Cancel. |
+| `crates/mobi2star-web/src/bindings.rs` | wasm-bindgen exports, compiled only for `wasm32`: `Source`, `convert`, `choices`, `version` and `lastPanic`. |
+| `web/worker.js` | Runs one conversion. It streams the file into WebAssembly memory chunk by chunk (`Source`), so no second whole copy exists. The page starts a worker per conversion and terminates it afterwards, which frees its memory and implements Cancel. |
 | `web/app.js`, `web/i18n.js`, `web/style.css`, `web/index.html` | The page: file choice, options, progress, errors and the result. No framework and no npm. All text comes from `i18n.js`, in English and Chinese. |
 
 `tools/build-web.sh` builds the WebAssembly with the `web` profile (release plus fat LTO), runs `wasm-bindgen --target web`, and assembles `_site/`:
@@ -33,7 +33,7 @@ The page runs the CLI's dictionary-only profile, `convert --profile stardict`:
 
 ## Limits and measurements
 
-`Limits::browser()` caps the input at 256 MiB and the output at 1.5 GiB, because WebAssembly memory is at most 4 GiB and holds the source, the parsed book and the archive at once. The worker checks the file size before reading the file.
+`Limits::browser()` caps the input at 256 MiB and the output at 1.5 GiB, because WebAssembly memory is at most 4 GiB and holds the source, the parsed book and the archive at once. `Source` refuses a larger file, or one memory cannot hold, before reading any of it.
 
 Collins COBUILD Advanced Learner's Dictionary is a 31 MB MOBI with 34,755 payloads. Measured on an Apple Silicon Mac:
 

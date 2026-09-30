@@ -68,13 +68,20 @@ function tree(root) {
   return files;
 }
 
+/** A `Source` filled in 1 MiB chunks, as the worker fills it from a File. */
+function sourceOf(bytes) {
+  const source = new wasm.Source(bytes.length);
+  for (let at = 0; at < bytes.length; at += 1 << 20) source.push(bytes.subarray(at, at + (1 << 20)));
+  return source;
+}
+
 /** Converts `book` in WebAssembly and with the CLI; both must agree. */
 function compare(book, reader, labels) {
   const context = `${book} ${reader} ${labels}`;
   const stages = [];
   const started = performance.now();
   const converted = wasm.convert(
-    readFileSync(book),
+    sourceOf(readFileSync(book)),
     JSON.stringify({ reader, labels }),
     (json) => stages.push(JSON.parse(json)),
   );
@@ -110,9 +117,10 @@ function compare(book, reader, labels) {
   return { seconds, files: actual.size, summary };
 }
 
-function failsWith(code, source, choices) {
+/** `run` must throw the converter's error with `code`. */
+function failsWith(code, run) {
   try {
-    wasm.convert(source, choices, () => {});
+    run();
   } catch (error) {
     check(error.message.startsWith(`${code}: `), `expected ${code}, got ${error.message}`);
     return;
@@ -123,7 +131,6 @@ function failsWith(code, source, choices) {
 const choices = JSON.parse(wasm.choices());
 check(wasm.version() === versions[0], 'version differs from the asset folder');
 check(isDeepStrictEqual(choices.labels, ['en', 'zh']), 'label choices');
-check(wasm.maxInputBytes() === 256 * 1024 * 1024, 'browser input limit');
 
 /** Every key path in a nested object, with arrays counted by length. */
 function shape(value, prefix = '') {
@@ -147,8 +154,13 @@ for (const book of ['tests/fixtures/srcs.mobi', 'tests/fixtures/huff.mobi', 'tes
     compare(book, reader, choices.labels[n++ % 2]);
   }
 }
-failsWith('MALFORMED', new TextEncoder().encode('not a mobi'), '{"reader":"koreader","labels":"en"}');
-failsWith('OPTIONS', readFileSync('tests/fixtures/huff.mobi'), '{"reader":"kindle","labels":"en"}');
+const huff = readFileSync('tests/fixtures/huff.mobi');
+const convertWith = (bytes, choices) => () => wasm.convert(sourceOf(bytes), choices, () => {});
+failsWith('MALFORMED', convertWith(new TextEncoder().encode('not a mobi'), '{"reader":"koreader","labels":"en"}'));
+failsWith('OPTIONS', convertWith(huff, '{"reader":"kindle","labels":"en"}'));
+failsWith('LIMIT', () => new wasm.Source(256 * 1024 * 1024 + 1));
+failsWith('IO', () => new wasm.Source(2).push(huff.subarray(0, 3)));
+failsWith('IO', () => wasm.convert(new wasm.Source(1), '{"reader":"koreader","labels":"en"}', () => {}));
 check(wasm.lastPanic() === undefined, 'no panic expected');
 console.log(`WebAssembly output matches the CLI for ${n} conversions.`);
 
