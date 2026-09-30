@@ -1,9 +1,10 @@
 //! Deterministic SRCS bundle production. The verifier rebuilds from the archived
 //! MOBI and compares the actual artifacts, in addition to an independent IDX reader.
 use crate::{
-    bundle::{collect_files, write_bytes, write_json},
+    bundle::collect_files,
     manifest::{check_header, TOOL},
     transaction::{sync_directory, Transaction},
+    tree::{DiskTree, Tree},
     FileDigest, OutputOptions,
 };
 use lexicon_core::{
@@ -93,52 +94,6 @@ struct ImageAudit {
     height: u32,
 }
 
-/// Every application write goes to a private transaction tree; aggregate disk
-/// bytes are checked while emitting files, then again including StarDict files.
-struct Sink<'a> {
-    root: &'a Path,
-    used: u64,
-    limit: u64,
-}
-impl<'a> Sink<'a> {
-    fn new(root: &'a Path, limits: &Limits) -> Self {
-        Self {
-            root,
-            used: 0,
-            limit: limits.output_bytes,
-        }
-    }
-    fn bytes(&mut self, name: &str, bytes: &[u8]) -> Result<()> {
-        srcs_reader::uri::validate_path(name)?;
-        self.used = self
-            .used
-            .checked_add(bytes.len() as u64)
-            .ok_or_else(|| Error::Limit("bundle byte overflow".into()))?;
-        if self.used > self.limit {
-            return Err(Error::Limit("aggregate bundle byte budget".into()));
-        }
-        let path = self.root.join(name);
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        write_bytes(self.root, name, bytes)
-    }
-    fn json<T: Serialize + ?Sized>(&mut self, name: &str, value: &T) -> Result<()> {
-        let mut bytes = serde_json::to_vec_pretty(value)?;
-        bytes.push(b'\n');
-        self.bytes(name, &bytes)
-    }
-    fn account_dictionary(&mut self, bytes: u64) -> Result<()> {
-        self.used = self
-            .used
-            .checked_add(bytes)
-            .ok_or_else(|| Error::Limit("bundle byte overflow".into()))?;
-        if self.used > self.limit {
-            return Err(Error::Limit("aggregate bundle byte budget".into()));
-        }
-        Ok(())
-    }
-}
 fn article_audit(
     kind: &str,
     id: usize,
@@ -213,40 +168,40 @@ fn build(
     let namespace = sha256(source);
     let plan = Plan::build(&book, &namespace)?;
     let resources = mobi.resources()?;
-    let mut sink = Sink::new(root, limits);
+    let mut tree = DiskTree::new(root, limits);
     for (path, bytes) in stardict_io::stylesheet_files(&plan.stylesheet(), style) {
-        sink.bytes(&format!("StarDict/{path}"), bytes)?;
+        tree.put(&format!("StarDict/{path}"), bytes)?;
     }
-    sink.bytes("Audit/original.mobi", source)?;
-    sink.bytes("Audit/embedded-source.zip", archive)?;
-    sink.bytes("Audit/rawml.bin", &rawml)?;
-    sink.json("Audit/container-header.json", &mobi.header)?;
-    sink.json("Audit/text-records.json", &text_records)?;
-    sink.json("Audit/compiled-crosscheck.json", &cross)?;
-    sink.json("Audit/source-definitions.json", &book.entries)?;
-    sink.json("Audit/source-headwords.json", &book.orths)?;
-    sink.json("Audit/source-inflections.json", &book.forms)?;
-    sink.json("Audit/source-pages.json", &book.pages)?;
-    sink.json("Audit/package.json", &book.package)?;
-    sink.json("Audit/render-plan.json", &plan)?;
+    tree.put("Audit/original.mobi", source)?;
+    tree.put("Audit/embedded-source.zip", archive)?;
+    tree.put("Audit/rawml.bin", &rawml)?;
+    tree.put_json("Audit/container-header.json", &mobi.header)?;
+    tree.put_json("Audit/text-records.json", &text_records)?;
+    tree.put_json("Audit/compiled-crosscheck.json", &cross)?;
+    tree.put_json("Audit/source-definitions.json", &book.entries)?;
+    tree.put_json("Audit/source-headwords.json", &book.orths)?;
+    tree.put_json("Audit/source-inflections.json", &book.forms)?;
+    tree.put_json("Audit/source-pages.json", &book.pages)?;
+    tree.put_json("Audit/package.json", &book.package)?;
+    tree.put_json("Audit/render-plan.json", &plan)?;
     let pdb_records=mobi.pdb.records.iter().enumerate().map(|(n,span)|Ok(serde_json::json!({"number":n,"span":span,"role":cross.record_roles[n],"sha256":sha256(span.bytes(source)?)}))).collect::<Result<Vec<_>>>()?;
-    sink.json("Audit/pdb-records.json", &pdb_records)?;
+    tree.put_json("Audit/pdb-records.json", &pdb_records)?;
     let mut image_audit = Vec::new();
     let mut source_gallery = Vec::new();
     let mut compiled_gallery = Vec::new();
     let mut browser_gallery = Vec::new();
     for (file, bytes) in &book.files {
-        sink.bytes(&format!("Source/{file}"), bytes)?;
+        tree.put(&format!("Source/{file}"), bytes)?;
         if let Some(page) = book.pages.get(file) {
-            sink.bytes(
+            tree.put(
                 &format!("Browser/{}", srcs_render::browser_path(file)),
                 &plan.browser_page(&book, page)?,
             )?;
         } else {
-            sink.bytes(&format!("Browser/content/{file}"), bytes)?;
+            tree.put(&format!("Browser/content/{file}"), bytes)?;
         }
         if !book.pages.contains_key(file) {
-            sink.bytes(&format!("StarDict/res/source/{file}"), bytes)?;
+            tree.put(&format!("StarDict/res/source/{file}"), bytes)?;
         }
         if mobi_reader::container::image_type(bytes).is_some() {
             let (width, height) = srcs_reader::validate_image(bytes, limits.text_bytes)?;
@@ -265,11 +220,11 @@ fn build(
     for resource in &resources {
         let bytes = resource.source_span.bytes(source)?;
         let (width, height) = srcs_reader::validate_image(bytes, limits.text_bytes)?;
-        sink.bytes(
+        tree.put(
             &format!("StarDict/res/compiled/{}", resource.filename),
             bytes,
         )?;
-        sink.bytes(&format!("Browser/compiled/{}", resource.filename), bytes)?;
+        tree.put(&format!("Browser/compiled/{}", resource.filename), bytes)?;
         image_audit.push(ImageAudit {
             file: resource.filename.clone(),
             origin: format!("pdb_record_{}", resource.pdb_record),
@@ -287,20 +242,20 @@ fn build(
             format!("compiled/{}", resource.filename),
         ));
     }
-    sink.json("Audit/images.json", &image_audit)?;
-    sink.bytes("Browser/index.html", &browser::index(&book, &plan, labels))?;
-    sink.bytes("Browser/lookup-data.js", &browser::lookup_data(&book)?)?;
-    sink.bytes("Browser/viewer.css", browser::CSS.as_bytes())?;
-    sink.bytes("Browser/viewer.js", browser::JS.as_bytes())?;
+    tree.put_json("Audit/images.json", &image_audit)?;
+    tree.put("Browser/index.html", &browser::index(&book, &plan, labels))?;
+    tree.put("Browser/lookup-data.js", &browser::lookup_data(&book)?)?;
+    tree.put("Browser/viewer.css", browser::CSS.as_bytes())?;
+    tree.put("Browser/viewer.js", browser::JS.as_bytes())?;
     let mut all_images=format!("<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"><title>{}</title><style>{}</style></head><body class=\"m2s-readable\">",
         text.html_lang,srcs_render::escape(text.all_images),srcs_render::readability::CSS).into_bytes();
     all_images.extend(gallery(text.all_images, &browser_gallery));
     all_images.extend_from_slice(b"</body></html>");
-    sink.bytes("Browser/images.html", &all_images)?;
+    tree.put("Browser/images.html", &all_images)?;
     let dictroot = root.join("StarDict");
     fs::create_dir_all(&dictroot)?;
     let mut payload_limits = limits.clone();
-    payload_limits.output_bytes = limits.output_bytes.saturating_sub(sink.used);
+    payload_limits.output_bytes = limits.output_bytes.saturating_sub(tree.used());
     let mut writer = PayloadWriter::new(&dictroot, &payload_limits, bits)?;
     let mut articles = Vec::new();
     let mut items = Vec::new();
@@ -436,7 +391,7 @@ fn build(
         });
     }
     let dictbytes = writer.finish()?;
-    sink.account_dictionary(dictbytes)?;
+    tree.account(dictbytes)?;
     let catalog = stardict_io::write_catalog(
         &dictroot,
         &book.package.title,
@@ -447,7 +402,7 @@ fn build(
         limits,
     )?;
     for name in ["dictionary.idx", "dictionary.syn", "dictionary.ifo"] {
-        sink.account_dictionary(dictroot.join(name).metadata()?.len())?;
+        tree.account(dictroot.join(name).metadata()?.len())?;
     }
     // Separately implemented reader checks the files just written, including all
     // duplicate headwords, alias ordinals and exact shared physical ranges.
@@ -506,9 +461,9 @@ fn build(
             return Err(Error::Verify("reader exact fragment route readback".into()));
         }
     }
-    sink.json("Audit/articles.json", &articles)?;
-    sink.json("Audit/catalog-items.json", &items)?;
-    sink.json("Audit/catalog-aliases.json", &aliases)?;
+    tree.put_json("Audit/articles.json", &articles)?;
+    tree.put_json("Audit/catalog-items.json", &items)?;
+    tree.put_json("Audit/catalog-aliases.json", &aliases)?;
     let report=SourceReport{
         schema:SCHEMA,backend:BACKEND.into(),implemented_content_checks_passed:true,rendering_status:"unverified_reader_dependent".into(),layout_profile:plan.layout_profile.clone(),
         source_sha256:namespace.clone(),source_archive_sha256:book.archive_sha256.clone(),source_headwords:book.orths.len(),source_aliases:book.forms.len(),
@@ -525,8 +480,8 @@ fn build(
             "Complete bundle regenerated from original MOBI before atomic publication".into(),
             "Display/layout equivalence and reading-system behavior require reader acceptance".into()],
     };
-    sink.json("report.json", &report)?;
-    sink.bytes("README.txt",b"mobi2star native Rust source bundle\n\nStarDict/: import the whole directory including res/.\nBrowser/index.html: offline viewer (JavaScript runs only in your browser).\nSource/: byte-exact original publisher-source files.\nAudit/: original MOBI, embedded ZIP, decompressed compiled text and provenance.\n\nContent checks are scoped in report.json. Reader rendering remains unverified.\nVerify with: mobi2star verify BUNDLE --source ORIGINAL.mobi --json\n")?;
+    tree.put_json("report.json", &report)?;
+    tree.put("README.txt",b"mobi2star native Rust source bundle\n\nStarDict/: import the whole directory including res/.\nBrowser/index.html: offline viewer (JavaScript runs only in your browser).\nSource/: byte-exact original publisher-source files.\nAudit/: original MOBI, embedded ZIP, decompressed compiled text and provenance.\n\nContent checks are scoped in report.json. Reader rendering remains unverified.\nVerify with: mobi2star verify BUNDLE --source ORIGINAL.mobi --json\n")?;
     let mut total = 0u64;
     let files = collect_files(root)?
         .into_iter()
@@ -563,7 +518,7 @@ fn build(
     {
         return Err(Error::Limit("aggregate bundle with manifest".into()));
     }
-    write_json(root, "manifest.json", &manifest)?;
+    tree.put_json("manifest.json", &manifest)?;
     sync_tree(root)?;
     Ok(report)
 }

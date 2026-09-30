@@ -4,6 +4,7 @@ mod bundle;
 mod manifest;
 mod output;
 mod transaction;
+mod tree;
 mod verify;
 pub use bundle::{convert, FileDigest, Manifest, Report};
 pub use output::OutputOptions;

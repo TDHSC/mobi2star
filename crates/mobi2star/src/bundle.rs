@@ -1,6 +1,7 @@
 use crate::{
     manifest::TOOL,
     transaction::{sync_directory, Transaction},
+    tree::{DiskTree, Tree},
     OutputOptions,
 };
 use html_preserve::Plan;
@@ -10,8 +11,7 @@ use lexicon_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, OpenOptions},
-    io::{BufWriter, Write},
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -69,20 +69,6 @@ pub(crate) struct RecordAudit {
     pub sha256: String,
 }
 
-pub(crate) fn write_bytes(root: &Path, name: &str, bytes: &[u8]) -> Result<()> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(root.join(name))?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    Ok(())
-}
-pub(crate) fn write_json<T: Serialize + ?Sized>(root: &Path, name: &str, value: &T) -> Result<()> {
-    let mut out = serde_json::to_vec_pretty(value)?;
-    out.push(b'\n');
-    write_bytes(root, name, &out)
-}
 pub(crate) fn collect_files(root: &Path) -> Result<Vec<String>> {
     fn visit(root: &Path, at: &Path, result: &mut Vec<String>) -> Result<()> {
         for entry in fs::read_dir(at)? {
@@ -161,17 +147,18 @@ pub fn convert(
     let root = tx.path()?;
     fs::create_dir(root.join("archive"))?;
     fs::create_dir(root.join("res"))?;
+    let mut tree = DiskTree::new(root, limits);
     let style = reader.style_delivery();
     for (path, bytes) in stardict_io::stylesheet_files(&plan.stylesheet, style) {
-        write_bytes(root, &path, bytes)?;
+        tree.put(&path, bytes)?;
     }
     let written = stardict_io::write(root, &document, limits, offset_bits, |entry| {
         html_preserve::render(&document, entry, &plan, style)
     })?;
-    write_bytes(root, "archive/source.mobi", &document.source)?;
-    write_bytes(root, "archive/rawml.bin", &document.rawml)?;
-    write_json(root, "archive/metadata.json", &document.metadata)?;
-    write_json(root, "archive/indexes.json", &document.index_audit)?;
+    tree.put("archive/source.mobi", &document.source)?;
+    tree.put("archive/rawml.bin", &document.rawml)?;
+    tree.put_json("archive/metadata.json", &document.metadata)?;
+    tree.put_json("archive/indexes.json", &document.index_audit)?;
     let records: Vec<RecordAudit> = document
         .records
         .iter()
@@ -184,30 +171,23 @@ pub fn convert(
             })
         })
         .collect::<Result<_>>()?;
-    write_json(root, "archive/records.json", &records)?;
-    write_json(root, "resources.json", &document.resources)?;
-    write_json(root, "edits.json", &plan)?;
+    tree.put_json("archive/records.json", &records)?;
+    tree.put_json("resources.json", &document.resources)?;
+    tree.put_json("edits.json", &plan)?;
     for resource in &document.resources {
-        write_bytes(
-            root,
+        tree.put(
             &format!("res/{}", resource.filename),
             resource.source_span.bytes(&document.source)?,
         )?;
     }
-    let file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(root.join("entries.jsonl"))?;
-    let mut entries = BufWriter::new(file);
+    let entries = tree.stream("entries.jsonl")?;
     for row in &written.entries {
-        serde_json::to_writer(&mut entries, row)?;
+        serde_json::to_writer(&mut *entries, row)?;
         entries.write_all(b"\n")?;
     }
-    entries.flush()?;
-    entries.get_ref().sync_all()?;
-    drop(entries);
+    tree.end_stream()?;
     let report = report(&document, &plan, offset_bits, reader);
-    write_json(root, "report.json", &report)?;
+    tree.put_json("report.json", &report)?;
     let files = collect_files(root)?
         .into_iter()
         .map(|path| {
@@ -230,7 +210,7 @@ pub fn convert(
         reader,
         files,
     };
-    write_json(root, "manifest.json", &manifest)?;
+    tree.put_json("manifest.json", &manifest)?;
     sync_directory(&root.join("res"))?;
     sync_directory(&root.join("archive"))?;
     sync_directory(root)?;
