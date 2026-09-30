@@ -103,6 +103,8 @@ pub fn document(dictionary: &Dictionary, matches: &[Match]) -> Result<String> {
 
 /// A lookup through GoldenDict's folded index: case-insensitive matches
 /// of the headword first, then the other folded matches, at most ten.
+/// Each group is ordered as GoldenDict-ng's multimaps order it: by the
+/// case-folded headword, keeping index order among equal ones.
 pub fn search(dictionary: &Dictionary, word: &str) -> Result<Outcome> {
     view(dictionary, word, None)
 }
@@ -120,6 +122,10 @@ fn view(dictionary: &Dictionary, word: &str, scroll_to: Option<String>) -> Resul
         };
         target.push(Match { headword, entry });
     }
+    // StarDictArticleRequest keys both multimaps by
+    // Folding::applySimpleCaseOnly(headword); lowercase stands in for it.
+    main.sort_by_cached_key(|m| m.headword.to_lowercase());
+    alternates.sort_by_cached_key(|m| m.headword.to_lowercase());
     main.append(&mut alternates);
     main.truncate(MAX_MATCHES);
     if main.is_empty() {
@@ -204,6 +210,27 @@ mod tests {
             1,
             "one copy of the linked sheet"
         );
+    }
+
+    #[test]
+    fn matches_follow_goldendicts_order() {
+        // Index order puts "ÄÖ" (C3 84) before "äo" (C3 A4); GoldenDict-ng
+        // orders by the case-folded headword, "äo" before "äö".
+        let d = build(
+            &[
+                (1, "ÄÖ", "<p>1</p>"),
+                (2, "äo", "<p>2</p>"),
+                (3, "ao", "<p>3</p>"),
+            ],
+            &[],
+            None,
+            &[],
+        );
+        let Outcome::View(view) = search(&d, "ao").unwrap() else {
+            panic!()
+        };
+        let words: Vec<_> = view.results.iter().map(|m| m.headword.as_str()).collect();
+        assert_eq!(words, ["ao", "äo", "ÄÖ"]);
     }
 
     #[test]
