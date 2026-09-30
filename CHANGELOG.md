@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Every release now attaches its browser page as `mobi2star-vX.Y.Z-web.tar.gz`: `index.html` and `v/X.Y.Z/` with `files.txt`, the files GitHub Pages serves for that version. Pages keeps only the two newest releases; the archive keeps every version downloadable, with its checksum in `SHA256SUMS` and a build-provenance attestation. The release now waits for the page to build, so a release whose page fails is not published.
+
 ## 0.6.0-alpha.2 — Browser page deployment
 
 - The browser page for 0.6.0-alpha.1 was never deployed: the release's browser test passed, then failed while removing Chrome's temporary profile. This release deploys the page with the preview. The CLI and the page are the same as in 0.6.0-alpha.1 apart from the version.

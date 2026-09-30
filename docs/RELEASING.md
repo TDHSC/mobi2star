@@ -31,19 +31,19 @@ The `build` job then compiles a release binary on a native runner for each targe
 | `x86_64-unknown-linux-musl` | `ubuntu-latest` |
 | `aarch64-unknown-linux-musl` | `ubuntu-24.04-arm` |
 
-Each binary is smoke-tested before packaging: `--version`, then `convert` and `verify` on a fixture. Linux binaries must also be statically linked. Each target is packaged as `mobi2star-vX.Y.Z-TARGET.tar.gz`, which contains the binary, `README.md`, `LICENSE` and `CHANGELOG.md`.
+Each binary is smoke-tested before packaging: `--version`, then `convert` and `verify` on a fixture. Linux binaries must also be statically linked. Each target is packaged as `mobi2star-vX.Y.Z-TARGET.tar.gz`, which contains the binary, `README.md`, `LICENSE` and `CHANGELOG.md`. The `site` job (below) adds `mobi2star-vX.Y.Z-web.tar.gz`, the browser page of this release.
 
-Finally, the `publish` job:
+Finally, once `build` and `site` have passed, the `publish` job:
 
 1. Writes `SHA256SUMS`.
-2. Records a build-provenance attestation for every archive.
-3. Creates the release. A version with a pre-release suffix, such as `-alpha.1`, is marked as a pre-release.
+2. Records a build-provenance attestation for every archive, the page's included.
+3. Creates the release with every archive attached. A version with a pre-release suffix, such as `-alpha.1`, is marked as a pre-release.
 
 ## Browser page
 
 The same workflow publishes the browser page to <https://tdhsc.github.io/mobi2star/>, after the release:
 
-1. The `site` job runs `.github/workflows/web.yml` once `check` passes. It builds the site (`tools/build-web.sh`) and runs the WebAssembly smoke test against the CLI. On a tag it also adds the currently published release's `v/<version>/` files (`tools/keep-published-release.sh`), so pages opened before the update keep working, and uploads the Pages artifact.
+1. The `site` job runs `.github/workflows/web.yml` once `check` passes. It builds the site (`tools/build-web.sh`), runs the WebAssembly smoke test against the CLI, and packages the page as `mobi2star-vX.Y.Z-web.tar.gz`: `index.html` and `v/X.Y.Z/` with its `files.txt`. On a tag it then adds the currently published release's `v/<version>/` files (`tools/keep-published-release.sh`), so pages opened before the update keep working, and uploads the Pages artifact.
 2. The `pages` job deploys that artifact to the `github-pages` environment, but only after `publish` has succeeded. A tag whose release fails therefore publishes no page.
 
 To redeploy a release, re-run the `site` job of its release run from the Actions page. The `pages` job depends on it and re-runs with it.
@@ -54,7 +54,7 @@ The repository needs a one-time setup before the first deployment:
 
 ## Dry run
 
-Start the workflow manually to build and smoke-test every archive and the browser page without publishing anything:
+Start the workflow manually to build and smoke-test every archive and the browser page, the page's archive included, without publishing anything:
 
 ```sh
 gh workflow run release.yml
