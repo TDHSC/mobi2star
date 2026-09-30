@@ -20,31 +20,37 @@ const PAGE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <idx:entry><idx:orth value="café"/><div id="third"><b>café</b><p>重音不能被归一化丢失。<a href="#first">返回</a></p></div></idx:entry>
 <p>附录：符号说明、版权测试文本。</p></body></html>"##;
 const OPF: &str = r#"<?xml version="1.0"?><package xmlns:dc="dc"><metadata><dc:title>Original Rust SRCS fixture</dc:title></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="css" href="style.css" media-type="text/css"/><item id="img" href="image.png" media-type="image/png"/></manifest><spine><itemref idref="a"/></spine></package>"#;
-fn zip_source(page: &str, image: &[u8]) -> Vec<u8> {
+fn zip_files(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    for (name, bytes) in [
-        ("OEBPS/a.xhtml", page.as_bytes()),
-        ("OEBPS/package.opf", OPF.as_bytes()),
-        (
-            "OEBPS/style.css",
-            b"body{font-family:serif}.definition{font-weight:normal}".as_slice(),
-        ),
-        ("OEBPS/image.png", image),
-    ] {
-        zip.start_file(name, options).unwrap();
+    for (name, bytes) in files {
+        zip.start_file(*name, options).unwrap();
         zip.write_all(bytes).unwrap();
     }
     zip.finish().unwrap().into_inner()
 }
+const STYLE: &[u8] = b"body{font-family:serif}.definition{font-weight:normal}";
+fn zip_source(page: &str, image: &[u8]) -> Vec<u8> {
+    zip_files(&[
+        ("OEBPS/a.xhtml", page.as_bytes()),
+        ("OEBPS/package.opf", OPF.as_bytes()),
+        ("OEBPS/style.css", STYLE),
+        ("OEBPS/image.png", image),
+    ])
+}
 fn fixture(page: &str) -> Vec<u8> {
+    fixture_from(|image| zip_source(page, image))
+}
+/// A MOBI built from the synthetic base with `archive(image)` as its SRCS
+/// record; `image` is the base's image record.
+fn fixture_from(archive: impl FnOnce(&[u8]) -> Vec<u8>) -> Vec<u8> {
     let pdb = PalmDatabase::parse(BASE).unwrap();
     let mut records = pdb
         .records
         .iter()
         .map(|s| s.bytes(BASE).unwrap().to_vec())
         .collect::<Vec<_>>();
-    let archive = zip_source(page, records.last().unwrap());
+    let archive = archive(records.last().unwrap());
     let mut srcs = b"SRCS\0\0\0\x10\0\0\0\0\0\0\0\0".to_vec();
     srcs.extend(archive);
     records.push(srcs);
@@ -285,6 +291,56 @@ fn each_reader_gets_its_stylesheet_delivery() {
         manifest["reader"] = "koreader".into();
     });
     assert!(mobi2star::verify_source(&bundle, None, &limits).is_err());
+}
+#[test]
+fn pages_with_different_stylesheets_keep_their_own_rules() {
+    // A second page that links a different stylesheet forms a second style set.
+    let second = r#"<html xmlns:idx="idx"><head><title>Second chapter</title><link rel="stylesheet" href="note.css"/></head><body><p class="note">A note page.</p></body></html>"#;
+    let opf = r#"<?xml version="1.0"?><package xmlns:dc="dc"><metadata><dc:title>Original Rust SRCS fixture</dc:title></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/><item id="css" href="style.css" media-type="text/css"/><item id="note" href="note.css" media-type="text/css"/><item id="img" href="image.png" media-type="image/png"/></manifest><spine><itemref idref="a"/><itemref idref="b"/></spine></package>"#;
+    let mobi = fixture_from(|image| {
+        zip_files(&[
+            ("OEBPS/a.xhtml", PAGE.as_bytes()),
+            ("OEBPS/b.xhtml", second.as_bytes()),
+            ("OEBPS/package.opf", opf.as_bytes()),
+            ("OEBPS/style.css", STYLE),
+            ("OEBPS/note.css", b".note{color:gray}"),
+            ("OEBPS/image.png", image),
+        ])
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("two-sets.mobi");
+    fs::write(&source, &mobi).unwrap();
+    let scope = html_preserve::css::scope_class(&sha256(&mobi));
+    let limits = Limits::default();
+    for reader in [TargetReader::Koreader, TargetReader::Readest] {
+        let options = OutputOptions {
+            reader,
+            ..Default::default()
+        };
+        let out = dir.path().join(format!("{reader:?}"));
+        let (bundle, report) = mobi2star::convert_source(&source, &out, &limits, options).unwrap();
+        assert_eq!(report.chapters, 2);
+        // The companion file holds both sets, each under its own class.
+        let css = fs::read_to_string(bundle.join("StarDict/dictionary.css")).unwrap();
+        assert!(css.contains(&format!(".{scope} .definition{{")), "{css}");
+        assert!(
+            css.contains(&format!(".{scope}-s1 .note{{color:gray}}")),
+            "{css}"
+        );
+        assert!(!css.contains(&format!(".{scope} .note")), "{css}");
+        // Each payload sits in its own set's wrapper and inlines only its own set.
+        let root = bundle.join("StarDict");
+        let entry = common::payload(&root, "run");
+        let chapter = common::payload(&root, "[Chapter 000002] Second chapter");
+        assert!(entry.contains(&format!("<div class=\"{scope}\">")));
+        assert!(chapter.contains(&format!("<div class=\"{scope}-s1\">")));
+        assert!(!chapter.contains(&format!("<div class=\"{scope}\">")));
+        if reader.style_delivery().inline {
+            assert!(chapter.contains(".note{color:gray}") && !chapter.contains(".definition"));
+            assert!(entry.contains(".definition") && !entry.contains(".note"));
+        }
+        mobi2star::verify_source(&bundle, Some(&source), &limits).unwrap();
+    }
 }
 #[test]
 fn source_compiled_mismatch_rolls_back() {
