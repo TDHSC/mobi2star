@@ -51,6 +51,12 @@ All fixtures are original and synthetic. The repository contains no third-party 
   - checks that the page's English and Chinese text cover every choice and every code the preview shows;
   - previews a converted fixture: lookups, suggestions and followed links;
   - draws a KOReader page with the bundled MuPDF and fonts and checks its text, fonts, links and a followed link.
+- **The page in a browser** (`tools/web-page-test.mjs`, also in the `web` job): serves `_site/` and drives headless Chrome over its debugging pipe. It converts a fixture through the page, opens the preview and checks:
+  - KOReader's canvas, links, result stepping and a followed link;
+  - that a new lookup takes the previous page away before drawing;
+  - reader switching, including a word one reader finds and the other does not;
+  - that clicks on `<a>`, `<area>`, SVG and MathML links in the frame reach the reader's rules without navigating;
+  - Random against a typed lookup, an emptied font size, and the preview's own error texts.
 - **Reader preview** (`crates/reader-view`): for each reader, its document, lookup and link rules on dictionaries built in memory, including test vectors for the `isolateCSS` port and KOReader's popup sizes computed by hand. `tests/readers.rs` converts the fixtures for every choice and checks that its styles reach the readers it is for, and that links resolve in KOReader for both backends. The zip loader refuses an oversized zip with `LIMIT` before inflating it. `crates/mobi2star-web/src/preview.rs` checks the JSON session and which readers a choice may be previewed in.
 
 ## What the tests do not cover

@@ -57,6 +57,9 @@ jobs:
         run: |
           node --version
           node tools/web-smoke.mjs target/release/mobi2star
+      # The runner image has Chrome on the PATH.
+      - name: Drive the page in headless Chrome
+        run: node tools/web-page-test.mjs
       # After the comparison, which expects one version in _site/v.
       - name: Keep the published release's files for pages already open
         if: inputs.pages-artifact && inputs.published-site != ''

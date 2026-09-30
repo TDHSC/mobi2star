@@ -140,7 +140,13 @@ node tools/web-smoke.mjs target/release/mobi2star
 node tools/web-smoke.mjs target/release/mobi2star --measure BOOK.mobi   # also time BOOK
 ```
 
-`.github/workflows/web.yml` runs Clippy for `wasm32`, the build and this comparison, caching the downloaded files by the lock file's hash. CI calls it on every push, and the release workflow calls it before deploying.
+`tools/web-page-test.mjs` checks what needs a browser: it serves `_site/`, drives headless Chrome (found on the PATH, or set `CHROME`) through the page and the preview, and checks the panel's behaviour and the frame's link handling ([TESTING.md](TESTING.md)).
+
+```sh
+node tools/web-page-test.mjs
+```
+
+`.github/workflows/web.yml` runs Clippy for `wasm32`, the build, this comparison and the browser test, caching the downloaded files by the lock file's hash. CI calls it on every push, and the release workflow calls it before deploying.
 
 ## Deployment
 
