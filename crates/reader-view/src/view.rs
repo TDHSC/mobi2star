@@ -43,6 +43,14 @@ pub enum Stay {
     /// What the reader does with the link is not known.
     Unknown,
 }
+impl Stay {
+    pub const ALL: &'static [Self] = &[
+        Self::AnchorInEntry,
+        Self::ExternalLink,
+        Self::NotFollowed,
+        Self::Unknown,
+    ];
+}
 
 /// The result of a search or a followed link.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

@@ -76,7 +76,9 @@ impl Dictionary {
     }
 
     /// Entries whose headword or synonym folds to the same key as `word`,
-    /// as in GoldenDict's index. The folded index is built on first use.
+    /// as in GoldenDict's index. The folded index is built on first use and,
+    /// like GoldenDict's, includes internal keys: following a link looks
+    /// its route up through it.
     pub fn lookup_folded(&self, word: &str) -> Vec<usize> {
         let folded = self.folded.get_or_init(|| {
             let index = self.index();
@@ -85,11 +87,9 @@ impl Dictionary {
                 map.entry(fold(&entry.word)).or_default().insert(n);
             }
             for synonym in &index.synonyms {
-                if !is_internal_key(&synonym.word) {
-                    map.entry(fold(&synonym.word))
-                        .or_default()
-                        .insert(synonym.target as usize);
-                }
+                map.entry(fold(&synonym.word))
+                    .or_default()
+                    .insert(synonym.target as usize);
             }
             map.into_iter()
                 .map(|(key, hits)| (key, hits.into_iter().collect()))
@@ -176,6 +176,12 @@ mod tests {
         assert_eq!(words(&d, d.lookup_folded("Cafe")), ["café"]);
         assert_eq!(words(&d, d.lookup_folded(" c-a-f-e! ")), ["café"]);
         assert!(d.lookup_folded("dog").is_empty());
+        let route = lexicon_core::routing_key(&"a".repeat(64), 7);
+        assert_eq!(
+            words(&d, d.lookup_folded(&route)),
+            ["cat"],
+            "links need routes"
+        );
     }
 
     #[test]
