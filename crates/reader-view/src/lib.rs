@@ -11,6 +11,7 @@
 mod app;
 mod archive;
 mod dictionary;
+pub mod goldendict_ng;
 pub mod html;
 pub mod koreader;
 mod lookup;
