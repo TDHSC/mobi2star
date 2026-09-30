@@ -12,7 +12,7 @@ The script checks formatting (run `cargo fmt --all` to fix it) and runs the whol
 cargo test -p srcs-render --locked
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same script on Ubuntu and macOS, and runs the test suite on the minimum supported Rust version (1.85, the `rust-version` in `Cargo.toml`).
+CI (`.github/workflows/ci.yml`) runs the same script on Ubuntu and macOS, runs the test suite on the minimum supported Rust version (1.85, the `rust-version` in `Cargo.toml`), and builds and tests the browser page (see [WEB.md](WEB.md#building-and-testing-locally) to run that locally).
 
 ## What the tests cover
 
@@ -39,6 +39,16 @@ All fixtures are original and synthetic. The repository contains no third-party 
   - rewritten payloads whose manifest hashes were recomputed to match;
   - extra files in a bundle and a wrong original.
 - **Golden fixtures** in `tests/fixtures/readability/` pin the readability profile's byte-level output.
+- **Bundle digests** (`crates/mobi2star/tests/bundle_digests.rs`) pin a digest of every file in full bundles for the MOBI fixtures and the synthetic SRCS books, over several readers, label languages and offset widths. Refactors of the output layer must leave them unchanged; a failure prints the new values.
+- **Profiles** (`crates/mobi2star/tests/profiles.rs`): for both backends, every reader, both label languages and both offset widths:
+  - `--profile stardict` must write exactly the full bundle's dictionary files;
+  - `convert_dictionary_zip` must unzip to those same files, with the same report and progress;
+  - archives must be byte-for-byte deterministic;
+  - dictionary-only output must be refused by `verify`.
+- **Browser build** (`tools/web-smoke.mjs`, the `web` CI job; see [WEB.md](WEB.md)):
+  - loads the built WebAssembly in Node;
+  - requires every archive to equal the CLI's `--profile stardict` output for the committed fixtures, including `tests/fixtures/srcs.mobi`, which a Rust test keeps equal to the generated SRCS book;
+  - checks that the page's English and Chinese text cover every choice.
 
 ## What the tests do not cover
 

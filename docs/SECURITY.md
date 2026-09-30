@@ -8,6 +8,14 @@ The converter and verifier read local files, write private staging/verification 
 
 The optional offline viewer contains normal browser JavaScript; application conversion and validation remain native Rust. Source XML scripts, event handlers, remote stylesheets, unknown media adapters and unsafe URI schemes are rejected in the SRCS path. Source files are also retained unchanged in `Source/`, for inspection as original input.
 
+## Browser page
+
+The page at <https://tdhsc.github.io/mobi2star/> runs the converter as WebAssembly in a web worker ([WEB.md](WEB.md)):
+- The file is read in the visitor's browser and never uploaded. The page's Content Security Policy forbids the page itself any network request (`connect-src 'none'`). It cannot cover the worker, because GitHub Pages sends no CSP header; there the guarantee rests on the code, which fetches only its own `.wasm`.
+- The site has no analytics, cookies or third-party resources. `localStorage` holds only the chosen page language.
+- The same input budgets apply, with `Limits::browser()` caps. A hostile file can at worst stop the worker, which the page reports; each conversion runs in a fresh worker that is terminated afterwards.
+- The page is built from the tagged source by `.github/workflows/pages.yml` and served over HTTPS. The pages workflow also compares its output with the CLI before deploying.
+
 ## Hostile-input controls
 
 Input, text, ZIP expansion, entry sizes, entry/alias counts and output totals have explicit budgets. ZIP directory count is checked before allocation, and classic ZIP structures, central-directory ranges, CRC, file type and normalized/case-colliding paths are checked. Paths are bounded to 64 components and 4,096 bytes. UTF-8 filename identity must be unambiguous. Source references are resolved using URL/package rules independently of the host OS.

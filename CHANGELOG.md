@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- New: convert in your browser at <https://tdhsc.github.io/mobi2star/>. The page runs the same Rust converter as WebAssembly, so the file is never uploaded, and offers a zip holding the StarDict folder. It has English and Chinese text, accepts files up to 256 MiB, and is republished with every release. See docs/WEB.md.
+- New `convert --profile stardict` publishes only `StarDict/` and `report.json`: the files the browser produces, byte-identical to the full bundle's `StarDict/`. It runs the checks that happen during conversion; there is no manifest, so `verify` refuses it with a message that says so. The report's scope lists only the checks that ran.
+- Full bundles are byte-identical to 0.4.0-alpha.2 apart from the version in `manifest.json`.
+- Compiled-backend bundles are now held to `--max-output-mib` as a whole while writing, as SRCS bundles already were, rather than only their payloads.
+- Library:
+  - `convert_dictionary` and `convert_dictionary_zip` (no filesystem, no clock), `Profile`, and progress reports as `Stage` values;
+  - `Limits::browser()`, `LabelLanguage::ALL` and `lexicon_core::read_limited`;
+  - `stardict-io` has a pure core: `encode_catalog`, `parse`, `check_payloads` and `read_next_payload`. `stardict_io::write` is removed, and `ParsedDictionary::dictionary_path` is replaced by `dictionary_file(root)`.
+
 ## 0.4.0-alpha.2 — Scoped compiled stylesheets
 
 - Compiled-backend books with CSS render differently from 0.4.0-alpha.1 and should be reconverted; publisher-source (SRCS) output, including Collins COBUILD, is unchanged.

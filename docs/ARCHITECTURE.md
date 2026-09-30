@@ -3,14 +3,15 @@
 ## Dependency direction
 
 ```text
-mobi2star (CLI, dispatch, transactions, bundle verification)
-├── mobi-reader ──────────────────────────┐
-├── srcs-reader → mobi-reader             │
-│              → html-preserve           │
-├── srcs-render → srcs-reader             ├── lexicon-core
-│              → html-preserve           │
-├── html-preserve                        │
-└── stardict-io ──────────────────────────┘
+mobi2star-web (the browser page's converter, WebAssembly bindings)
+└── mobi2star (CLI, dispatch, output trees, transactions, bundle verification)
+    ├── mobi-reader ──────────────────────────┐
+    ├── srcs-reader → mobi-reader             │
+    │              → html-preserve           │
+    ├── srcs-render → srcs-reader             ├── lexicon-core
+    │              → html-preserve           │
+    ├── html-preserve                        │
+    └── stardict-io ──────────────────────────┘
 ```
 
 Every lower layer is a reusable library. The CLI owns argument parsing and publication; source readers produce facts, renderers produce bytes, and the StarDict library owns file encoding. All application crates forbid unsafe Rust in their own source. External dependencies retain their separate safety and license boundaries.
@@ -37,11 +38,45 @@ CSS scoping lives in `html_preserve::css` and is shared by both backends. It pre
 
 The offline browser generator emits local HTML/CSS/JavaScript and lookup records. It starts no browser or server, performs no requests, and does not invoke a helper process. Original image bytes are used directly. Raster decoding validates supported images; animation and reader-specific presentation remain reading-system concerns.
 
-## Shared StarDict writer
+## StarDict encoding
 
-`PayloadWriter` streams HTML into `.dict`. `CatalogItem` binds a stable source ID and word to a `Payload` byte range; `CatalogAlias` targets that ID. `write_catalog` resolves sorted ordinals once and emits `.idx`, `.syn` and `.ifo`. Exact shared ranges are allowed; partial overlaps, gaps, trailing unindexed bytes, invalid keys and excessive sizes are errors.
+`stardict-io` has a pure core with thin disk wrappers, so the same code serves a directory and an in-memory archive:
+- `PayloadWriter` streams HTML payloads into any `Write`.
+- `CatalogItem` binds a stable source ID and word to a `Payload` byte range, and `CatalogAlias` targets that ID.
+- `encode_catalog` resolves sorted ordinals once and returns the `.idx`, `.syn` and `.ifo` bytes; `write_catalog` writes them to disk.
 
-The `compiled` writer is now a thin adapter to these same primitives. The standalone StarDict reader parses the emitted files separately and checks ordering, counts, ordinals and physical coverage.
+The independent reader is separate code:
+- `parse` takes the index bytes and the `.dict` length, and checks ordering, counts, ordinals and physical coverage.
+- `check_payloads` makes one forward pass over the `.dict`, hashing every payload once even where entries share it.
+
+Exact shared ranges are allowed. Partial overlaps, gaps, trailing unindexed bytes, invalid keys and excessive sizes are errors.
+
+## Output trees, the dictionary builder and profiles
+
+The `Tree` trait is where conversion output goes:
+- It is write-only: whole files (`put`) or one stream at a time, with nothing else written while a stream is open.
+- Every path is validated and created once, and every byte counts against one aggregate output budget.
+- `DiskTree` writes a transaction's staging directory.
+- `ZipTree` writes a zip archive in memory. Text is deflated; PNG, JPEG and GIF data is stored. Timestamps and permissions are fixed, so the bytes are deterministic.
+- `Tree::readback()` returns a `ReadBack` over what was written. For `DiskTree` that is the directory. For `ZipTree` it is the finished archive, reopened from its own bytes, so the check reads what the user downloads.
+
+`DictionaryBuilder` is the one place both backends write StarDict files:
+- Stylesheets and resources are written first.
+- The builder then streams payloads into `{dir}dictionary.dict`, records each payload's digest, and collects catalog items and aliases.
+- `finish` writes `.idx`, `.syn` and `.ifo`.
+- `check_written` reads the dictionary back through `ReadBack`. The parsed index and synonyms must equal the catalog, and every payload must hash to what was appended.
+
+Each backend runs in stages: prepare (parse, cross-check, plan), write the dictionary (generic over `Tree`), and check it. The full bundle then adds its audit trees, report and manifest on a `DiskTree`.
+
+`Profile` decides where a conversion stops:
+- `Bundle` is the full, verifiable bundle.
+- `Stardict` stops after the dictionary and its checks, and its report's scope names only the checks that ran:
+  - `convert_dictionary` publishes `StarDict/` and `report.json` through a `DiskTree` (`convert --profile stardict`);
+  - `convert_dictionary_zip` writes the same files into a `ZipTree` under a folder named from the title, using no filesystem and no clock (the browser page, [WEB.md](WEB.md)).
+- For SRCS, the dictionary profile drops the compiled-side audit inputs as soon as the cross-check passes.
+- For compiled books, it replays every entry with `verify::check_entries`, the function `verify` uses.
+
+Progress is reported as `Stage` values, counted in payloads (about 200 updates per dictionary), never timed.
 
 ## Stylesheet delivery
 
@@ -58,7 +93,7 @@ The reader is chosen at render time, so `Audit/render-plan.json`, `edits.json` a
 
 ## Publication and verification
 
-`Transaction` exclusively creates a new owner-only output directory. Source conversion writes into its private staging child, reads the actual dictionary back, then runs `verify_source`. That verifier checks exact file membership and hashes, binds the supplied original when present, parses the actual StarDict files, rebuilds the full deterministic bundle from the archived source into a temporary directory, and compares the two inventories. A successful check allows publication as `OUTPUT/bundle`.
+`Transaction` exclusively creates a new owner-only output directory. Source conversion writes into its private staging child, reads the actual dictionary back, then runs `verify_source`. That verifier checks exact file membership and hashes, binds the supplied original when present, parses the actual StarDict files, rebuilds the full deterministic bundle from the archived source into a temporary directory, and compares the two inventories. A successful check allows publication as `OUTPUT/bundle`. Dictionary-only output has no manifest, and `verify` refuses it with an error that says so.
 
 Rebuild verification is intentionally version-specific and reuses the producer's parser/renderer. It detects altered or missing artifacts even when their checksums have been rewritten, while common-mode implementation bugs remain possible. This is why the suite also contains source/compiled comparisons and synthetic adversarial fixtures, and why the report keeps a distinct rendering status.
 
@@ -91,7 +126,7 @@ fn convert_book(input: &Path, output: &Path) -> lexicon_core::Result<()> {
 }
 ```
 
-`OutputOptions` groups every choice that changes bundle bytes (offset width, label language, target reader); conversions take it instead of separate parameters, and manifests record its values for verification. `convert` / `verify` remain the original typed compiled-adapter APIs. `convert_source` / `verify_source` expose the new typed source report. `convert_with_backend` / `verify_bundle` provide typed unified dispatch.
+`OutputOptions` groups every choice that changes bundle bytes (offset width, label language, target reader); conversions take it instead of separate parameters, and manifests record its values for verification. `convert` / `verify` remain the original typed compiled-adapter APIs. `convert_source` / `verify_source` expose the new typed source report. `convert_with_backend` / `verify_bundle` provide typed unified dispatch. `convert_dictionary` and `convert_dictionary_zip` build only the dictionary; the second returns a `DictionaryArchive { zip, folder, report }` and is what the browser runs.
 
 
 ## Readability adapter

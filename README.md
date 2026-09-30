@@ -4,6 +4,16 @@ A native Rust converter from MOBI dictionaries to [StarDict](https://stardict-4.
 
 > **Status: alpha.** Output layout, report fields and library APIs may change between releases. Content checks are automated; how a dictionary looks in a particular reader still needs to be checked on that reader.
 
+## Use it in your browser
+
+Open **<https://tdhsc.github.io/mobi2star/>**, choose a MOBI dictionary and your reader, and download a zip that holds the StarDict folder. The conversion runs inside your browser tab, so the file is never uploaded.
+
+- The page runs the same Rust converter as the CLI, compiled to WebAssembly, and produces the same StarDict files.
+- It accepts files up to 256 MiB. Phones and tablets may run out of memory on large dictionaries.
+- It is republished with every release. See [docs/WEB.md](docs/WEB.md) for how it works and what it checks.
+
+Use the command-line tool for the full audit bundle, later verification with `verify`, or larger limits.
+
 ## Features
 
 - **Two backends.** `srcs` reads the publisher source that KindleGen embeds in many MOBI files (the SRCS record: a ZIP of XHTML, OPF, CSS and images). `compiled` reads the compiled MOBI text of ordinary dictionaries. The default, `auto`, uses `srcs` whenever an embedded source is present.
@@ -78,6 +88,7 @@ Every command accepts `--json` for machine-readable output (errors go to stderr)
   - Dictionary content is never translated.
   - The choice is recorded in `manifest.json`, so `verify` needs no extra option.
 - `--reader` sets the reader the dictionary is built for, which decides how entries reference the stylesheet. See [Choosing a reader](#choosing-a-reader).
+- `--profile stardict` publishes only `StarDict/` and `report.json`, the files the browser page produces. They are byte-identical to the full bundle's `StarDict/` and pass the checks that run during conversion, but with no manifest `verify` cannot check them later. The default, `bundle`, writes the full bundle.
 
 The output directory must not exist yet. `convert` creates it with owner-only permissions (`0700`) and publishes `OUTPUT/bundle` only after every check passes. If any check fails, the staging tree is removed and existing files are left untouched.
 
@@ -179,10 +190,11 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SECURITY.md](docs/SEC
 | `html-preserve` | Raw HTML byte positions and local edits for the `compiled` backend |
 | `srcs-reader` | ZIP/XHTML/OPF reading, source fact model, image decoding and compiled-index cross-checks |
 | `srcs-render` | Replayable byte edits, CSS scoping, the Collins readability profile, StarDict payloads and the offline viewer |
-| `stardict-io` | Streaming StarDict writer shared by both backends, plus an independent reader |
-| `mobi2star` | CLI, backend selection, staged publication, source binding and end-to-end verification |
+| `stardict-io` | StarDict encoding, parsing and payload checks shared by both backends, with thin disk wrappers |
+| `mobi2star` | CLI, backend selection, output to a directory or a zip, staged publication, source binding and end-to-end verification |
+| `mobi2star-web` | The browser page's converter and its WebAssembly bindings |
 
-Further reading: [docs/READERS.md](docs/READERS.md), [docs/TESTING.md](docs/TESTING.md) and [docs/SOURCES.md](docs/SOURCES.md).
+Further reading: [docs/READERS.md](docs/READERS.md), [docs/WEB.md](docs/WEB.md), [docs/TESTING.md](docs/TESTING.md) and [docs/SOURCES.md](docs/SOURCES.md).
 
 ## Dictionary content and trademarks
 
