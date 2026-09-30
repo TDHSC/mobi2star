@@ -22,7 +22,8 @@ rm -rf _site
 assets="_site/v/$version"
 wasm-bindgen --target web --no-typescript --out-dir "$assets" --out-name mobi2star \
   target/wasm32-unknown-unknown/web/mobi2star_web.wasm
-cp web/app.js web/worker.js web/i18n.js web/style.css web/icon.svg "$assets/"
+cp web/app.js web/worker.js web/worker-common.js web/preview.js web/preview-worker.js \
+  web/frame.html web/i18n.js web/style.css web/icon.svg "$assets/"
 # The next deployment keeps these files (tools/keep-published-release.sh).
 files=$(cd "$assets" && ls)
 printf '%s\n' "$files" > "$assets/files.txt"

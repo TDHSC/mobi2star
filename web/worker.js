@@ -7,24 +7,10 @@
 //      { type: 'done', zip: Blob, fileName, summary }
 //      { type: 'error', code, detail }
 import init, { Source, convert, lastPanic } from './mobi2star.js';
+import { describe, fill } from './worker-common.js';
 
 function fail(code, detail) {
   postMessage({ type: 'error', code, detail: String(detail ?? '') });
-}
-
-/** Splits the converter's `CODE: detail` error message. */
-function conversionError(error) {
-  if (error instanceof WebAssembly.RuntimeError) {
-    let panic;
-    try {
-      panic = lastPanic();
-    } catch {
-      // The instance may be unusable after a trap.
-    }
-    return ['CRASH', panic ?? error.message];
-  }
-  const match = /^([A-Z]+): ([\s\S]*)$/.exec(error?.message ?? '');
-  return match ? [match[1], match[2]] : ['OTHER', error?.message ?? error];
 }
 
 onmessage = async ({ data: { file, choices } }) => {
@@ -38,13 +24,9 @@ onmessage = async ({ data: { file, choices } }) => {
   // browser limit before anything is read.
   let source;
   try {
-    source = new Source(file.size);
-    const reader = file.stream().getReader();
-    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
-      source.push(chunk.value);
-    }
+    source = await fill(new Source(file.size), file);
   } catch (error) {
-    const [code, detail] = conversionError(error);
+    const [code, detail] = describe(error, lastPanic);
     return fail(code === 'OTHER' ? 'IO' : code, detail);
   }
   try {
@@ -56,6 +38,6 @@ onmessage = async ({ data: { file, choices } }) => {
     converted.free();
     postMessage(message);
   } catch (error) {
-    fail(...conversionError(error));
+    fail(...describe(error, lastPanic));
   }
 };

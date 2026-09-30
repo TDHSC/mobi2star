@@ -204,3 +204,49 @@ a {
 [hidden] {
   display: none !important;
 }
+
+.preview {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.preview h3 {
+  margin: 0;
+}
+.preview-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.preview-search input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  min-height: 44px;
+  font: inherit;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+.preview-stage {
+  display: grid;
+  justify-items: center;
+}
+.preview-frame {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

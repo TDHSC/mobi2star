@@ -140,11 +140,17 @@ function shape(value, prefix = '') {
 }
 const { LANGUAGES, TEXT, format } = await import(pathToFileURL(join(assets, 'i18n.js')));
 check(isDeepStrictEqual(LANGUAGES, Object.keys(TEXT)), 'languages');
+const fidelities = [...new Set(Object.values(choices.apps).map((facts) => facts.fidelity))].sort();
 for (const lang of LANGUAGES) {
   check(isDeepStrictEqual(shape(TEXT[lang]), shape(TEXT.en)), `${lang} text has other keys than en`);
   check(isDeepStrictEqual(Object.keys(TEXT[lang].readers), choices.readers), `${lang} readers`);
   check(isDeepStrictEqual(Object.keys(TEXT[lang].labels), choices.labels), `${lang} labels`);
+  const sorted = (object) => Object.keys(object).sort();
+  check(isDeepStrictEqual(sorted(TEXT[lang].apps), sorted(choices.apps)), `${lang} apps`);
+  check(isDeepStrictEqual(Object.keys(TEXT[lang].fidelity).sort(), fidelities), `${lang} fidelity`);
+  check(isDeepStrictEqual(Object.keys(TEXT[lang].stays), choices.stays), `${lang} stays`);
 }
+check(isDeepStrictEqual(Object.keys(choices.previews).sort(), [...choices.readers].sort()), 'every choice has previews');
 check(format('{a} of {b}', { a: 1, b: 2 }) === '1 of 2', 'format');
 const page = readFileSync('_site/index.html', 'utf8');
 check(!page.includes('__VERSION__') && page.includes(`v/${versions[0]}/app.js`), 'index.html version');
@@ -156,6 +162,27 @@ for (const book of ['tests/fixtures/srcs.mobi', 'tests/fixtures/huff.mobi', 'tes
 }
 const huff = readFileSync('tests/fixtures/huff.mobi');
 const convertWith = (bytes, choices) => () => wasm.convert(sourceOf(bytes), choices, () => {});
+// The preview opens a converted zip the way the preview worker does.
+const { fill } = await import(pathToFileURL(join(assets, 'worker-common.js')));
+async function previewOf(book, reader) {
+  const converted = wasm.convert(sourceOf(readFileSync(book)), JSON.stringify({ reader, labels: 'en' }), () => {});
+  const zip = new Blob([converted.takeZip()]);
+  converted.free();
+  return new wasm.Preview(await fill(wasm.Source.forArchive(zip.size), zip), reader);
+}
+{
+  const preview = await previewOf('tests/fixtures/srcs.mobi', 'universal');
+  const info = JSON.parse(preview.info());
+  check(isDeepStrictEqual(info.apps, choices.previews.universal), 'preview apps');
+  const found = JSON.parse(preview.search('goldendict-ng', 'run'));
+  check(found.outcome === 'view' && found.results.length === 2, 'preview search');
+  const link = /href="(bword:\/\/[^"]+)"/.exec(found.documents[0])[1];
+  const followed = JSON.parse(preview.follow('goldendict-ng', link, found.results[0].entry));
+  check(followed.outcome === 'view' && followed.scroll_to, 'preview follows and scrolls');
+  check(JSON.parse(preview.follow('readest', link, 0)).reason === 'not-followed', 'readest stays');
+  check(JSON.parse(preview.suggest('ru', 12)).includes('run'), 'preview suggestions');
+  preview.free();
+}
 failsWith('MALFORMED', convertWith(new TextEncoder().encode('not a mobi'), '{"reader":"koreader","labels":"en"}'));
 failsWith('OPTIONS', convertWith(huff, '{"reader":"kindle","labels":"en"}'));
 failsWith('LIMIT', () => new wasm.Source(256 * 1024 * 1024 + 1));

@@ -2,6 +2,7 @@
 // showing progress, errors and the result. All text comes from i18n.js and
 // is set with textContent.
 import { LANGUAGES, TEXT, format } from './i18n.js';
+import { PreviewPanel } from './preview.js';
 
 const $ = (id) => document.getElementById(id);
 const STORAGE_KEY = 'mobi2star.language';
@@ -19,6 +20,8 @@ const state = {
   error: null,
   result: null,
   url: null,
+  /** The open preview, which belongs to `result`. */
+  preview: null,
 };
 
 function initialLanguage() {
@@ -134,10 +137,34 @@ function renderResult() {
   const checks = report.verification_scope;
   $('checks-title').textContent = checks ? ui.details : ui.notes;
   $('checks').replaceChildren(...(checks ?? report.notes).map((line) => element('li', line)));
+  $('preview-toggle').textContent = state.preview ? ui.previewClose : ui.preview;
+  $('preview').hidden = !state.preview;
+  state.preview?.render();
 }
 
-/** Clears the previous outcome and frees its download. */
+/** Closes the preview, which terminates its worker and frees its memory. */
+function closePreview() {
+  state.preview?.close();
+  state.preview = null;
+}
+
+function togglePreview() {
+  if (state.preview) {
+    closePreview();
+  } else if (state.result) {
+    state.preview = new PreviewPanel({
+      container: $('preview'),
+      text,
+      zip: state.result.zip,
+      reader: state.result.reader,
+    });
+  }
+  renderResult();
+}
+
+/** Clears the previous outcome and frees its download and preview. */
 function clearOutcome() {
+  closePreview();
   if (state.url) URL.revokeObjectURL(state.url);
   Object.assign(state, { url: null, result: null, error: null, notice: null });
 }
@@ -196,6 +223,7 @@ function cancel() {
 }
 
 $('form').addEventListener('submit', convert);
+$('preview-toggle').addEventListener('click', togglePreview);
 $('cancel').addEventListener('click', cancel);
 $('file').addEventListener('change', () => choose($('file').files[0]));
 $('reader').addEventListener('change', render);

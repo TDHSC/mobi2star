@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- The page itself fetches nothing. The worker has no policy of its own:
        GitHub Pages cannot send one as a header. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; worker-src 'self'; frame-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="description" content="Convert a MOBI dictionary to StarDict in your browser. The file never leaves your device.">
   <title>mobi2star</title>
@@ -68,7 +68,11 @@
       <h2 data-text="ui.done"></h2>
       <p data-text="ui.checksPassed"></p>
       <dl id="summary"></dl>
-      <a id="download" class="button" href="#"></a>
+      <div class="actions">
+        <a id="download" class="button" href="#"></a>
+        <button type="button" id="preview-toggle" class="quiet"></button>
+      </div>
+      <section id="preview" class="preview" hidden></section>
       <h3 data-text="ui.install"></h3>
       <ol id="install"></ol>
       <details>
