@@ -13,7 +13,9 @@ mod isolate_css;
 pub use isolate_css::isolate_css;
 
 use crate::{
-    html::inline_images, url::percent_decode, App, Dictionary, Match, Outcome, Stay, View,
+    html::{escape, inline_images},
+    url::{percent_decode, resource_path},
+    App, Dictionary, Match, Outcome, Stay, View,
 };
 use html_preserve::tokenizer::{Token, Tokenizer};
 use lexicon_core::{sha256, Result};
@@ -38,26 +40,6 @@ const CLEANER: &str =
 /// GoldenDict shows at most this many matches from one dictionary.
 const MAX_MATCHES: usize = 10;
 
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-/// A `bres://` path relative to res/: percent-decoded, without a leading
-/// slash. `data:`, `http(s):` and `ftp:` URLs are left alone.
-fn resource_path(url: &str) -> Option<String> {
-    let lower = url.to_ascii_lowercase();
-    if ["data:", "http:", "https:", "ftp:"]
-        .iter()
-        .any(|scheme| lower.starts_with(scheme))
-    {
-        return None;
-    }
-    Some(percent_decode(url).trim_start_matches('/').to_owned())
-}
-
 /// The res/ stylesheets an entry links to, in order.
 fn linked_stylesheets(html: &str) -> Vec<String> {
     let mut paths = Vec::new();
@@ -68,11 +50,15 @@ fn linked_stylesheets(html: &str) -> Vec<String> {
         if tag.name != "link" || tag.closing {
             continue;
         }
-        if let Some(href) = tag.attr("href").and_then(|a| a.value) {
-            if let Some(path) = html.get(href.start..href.end).and_then(resource_path) {
-                paths.push(path);
-            }
-        }
+        let Some(raw) = tag
+            .attr("href")
+            .and_then(|a| a.value)
+            .and_then(|span| html.get(span.start..span.end))
+        else {
+            continue;
+        };
+        let href = html_preserve::decode_entities(raw).unwrap_or_else(|_| raw.into());
+        paths.extend(resource_path(&href));
     }
     paths
 }

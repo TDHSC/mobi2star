@@ -26,6 +26,14 @@ pub fn anchors(html: &str) -> BTreeSet<String> {
     found
 }
 
+/// `text` with `&`, `<`, `>` and `"` escaped, for text and attribute values.
+pub fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
 /// Replaces spans of `html`, which must be sorted and disjoint.
 fn splice(html: &str, edits: Vec<(usize, usize, String)>) -> String {
     let mut out = String::with_capacity(html.len());
@@ -173,6 +181,11 @@ pub fn wrap_characters(
 mod tests {
     use super::*;
     const PNG: &[u8] = b"\x89PNG\r\n\x1a\nxyz";
+
+    #[test]
+    fn escaping_covers_text_and_attributes() {
+        assert_eq!(escape(r#"a<b & "c">"#), "a&lt;b &amp; &quot;c&quot;&gt;");
+    }
 
     #[test]
     fn anchors_are_ids_and_link_names() {

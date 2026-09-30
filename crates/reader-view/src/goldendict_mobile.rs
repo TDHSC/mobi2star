@@ -3,9 +3,7 @@
 //! `<style>` inside an entry works and linked res/ stylesheets do not.
 //! Nothing else is established, so this adds no rules of its own: entries
 //! appear in a plain page, and links are not followed.
-use crate::{
-    html::inline_images, url::percent_decode, App, Dictionary, Match, Outcome, Stay, View,
-};
+use crate::{html::inline_images, url::resource_path, App, Dictionary, Match, Outcome, Stay, View};
 use lexicon_core::Result;
 
 pub fn document(dictionary: &Dictionary, matches: &[Match]) -> Result<String> {
@@ -13,7 +11,7 @@ pub fn document(dictionary: &Dictionary, matches: &[Match]) -> Result<String> {
     for found in matches {
         let payload = dictionary.payload(found.entry)?;
         body.push_str(&inline_images(&payload, |src| {
-            dictionary.resource(percent_decode(src).trim_start_matches('/'))
+            resource_path(src).and_then(|path| dictionary.resource(&path))
         }));
     }
     Ok(format!(

@@ -10,7 +10,7 @@
 //! It also uses the parts of Tailwind CSS 4.3.3 preflight.css (MIT,
 //! Copyright Tailwind Labs, Inc.) that reach an entry, in the `base` layer,
 //! so that an entry's own unlayered `<style>` wins as it does in Readest.
-use crate::{App, Dictionary, Match, Outcome, Stay, View};
+use crate::{html::escape, App, Dictionary, Match, Outcome, Stay, View};
 use lexicon_core::Result;
 use unicode_normalization::{char::is_combining_mark, UnicodeNormalization};
 
@@ -48,12 +48,6 @@ const STYLE: &str = r#"@layer theme, base, components, utilities;
   .source { margin-top: 0.5rem; padding-bottom: 0.5rem; opacity: 0.6; }
 }
 "#;
-
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
 
 /// The words Readest tries, in order: as typed, lowercase, capitalised,
 /// uppercase, NFC, NFD, and with combining marks removed.

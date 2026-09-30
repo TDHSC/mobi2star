@@ -22,6 +22,21 @@ pub fn percent_decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// The path under `res/` that a web-engine reader resolves a URL in an
+/// entry to: percent-decoded, without a leading slash. `data:`, `http:`,
+/// `https:` and `ftp:` URLs are not resources (GoldenDict-ng's
+/// `handleResource`).
+pub fn resource_path(url: &str) -> Option<String> {
+    let lower = url.to_ascii_lowercase();
+    if ["data:", "http:", "https:", "ftp:"]
+        .iter()
+        .any(|scheme| lower.starts_with(scheme))
+    {
+        return None;
+    }
+    Some(percent_decode(url).trim_start_matches('/').to_owned())
+}
+
 /// MuPDF's `fz_cleanname`: drops empty and `.` segments and resolves `..`
 /// where it can. KOReader's image paths and relative links pass through it.
 pub fn clean_path(path: &str) -> String {
@@ -54,6 +69,12 @@ mod tests {
         assert_eq!(percent_decode("caf%C3%A9+x"), "café+x");
         assert_eq!(percent_decode("%FF"), "\u{fffd}");
         assert_eq!(percent_decode("%41"), "A");
+    }
+    #[test]
+    fn resources_are_decoded_paths_without_a_scheme() {
+        assert_eq!(resource_path("/a%20b.png").as_deref(), Some("a b.png"));
+        assert_eq!(resource_path("HTTPS://x/a.png"), None);
+        assert_eq!(resource_path("data:image/png;base64,AA"), None);
     }
     #[test]
     fn paths_are_cleaned_like_mupdf() {
