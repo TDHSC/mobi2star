@@ -3,10 +3,10 @@
 use crate::{
     source_bundle::DICTIONARY_DIR,
     transaction::{sync_tree, Transaction},
-    tree::{DiskTree, Tree},
+    tree::{folder_name, DiskTree, Tree, ZipTree},
     OutputOptions, Stage,
 };
-use lexicon_core::{read_bounded, Limits, Result};
+use lexicon_core::{read_bounded, Error, Limits, Result};
 use std::path::{Path, PathBuf};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum Backend {
@@ -85,11 +85,11 @@ pub fn convert_with_backend(
 }
 /// Builds only the dictionary into `tree`, in the folder `folder` names
 /// from the book title (with a trailing `/`). Shared by the CLI's
-/// dictionary-only profile and the browser.
+/// dictionary-only profile and the zip archive.
 pub(crate) fn build_dictionary(
     source: Vec<u8>,
     tree: &mut impl Tree,
-    folder: &dyn Fn(&str) -> String,
+    folder: impl FnOnce(&str) -> String,
     limits: &Limits,
     options: OutputOptions,
     backend: Backend,
@@ -124,7 +124,7 @@ pub fn convert_dictionary(
     let report = build_dictionary(
         source,
         &mut tree,
-        &|_| DICTIONARY_DIR.into(),
+        |_| DICTIONARY_DIR.into(),
         limits,
         options,
         backend,
@@ -133,6 +133,51 @@ pub fn convert_dictionary(
     tree.put_json("report.json", &report)?;
     sync_tree(root)?;
     Ok((tx.commit()?, report))
+}
+/// A dictionary packed as a zip archive.
+#[derive(Clone, Debug)]
+pub struct DictionaryArchive {
+    /// The archive: one folder holding the StarDict files.
+    pub zip: Vec<u8>,
+    /// That folder's name, made from the dictionary title.
+    pub folder: String,
+    pub report: ConversionReport,
+}
+/// Converts `source` to the dictionary-only profile in memory and packs it
+/// as a zip archive, read back and checked like `convert_dictionary`'s
+/// output. It uses no filesystem and no clock, so it runs in WebAssembly.
+pub fn convert_dictionary_zip(
+    source: Vec<u8>,
+    limits: &Limits,
+    options: OutputOptions,
+    backend: Backend,
+    progress: &mut dyn FnMut(Stage),
+) -> Result<DictionaryArchive> {
+    if source.len() > limits.input_bytes {
+        return Err(Error::Limit(format!(
+            "input exceeds {} bytes",
+            limits.input_bytes
+        )));
+    }
+    let mut tree = ZipTree::new(limits);
+    let mut folder = String::new();
+    let report = build_dictionary(
+        source,
+        &mut tree,
+        |title| {
+            folder = folder_name(title);
+            format!("{folder}/")
+        },
+        limits,
+        options,
+        backend,
+        progress,
+    )?;
+    Ok(DictionaryArchive {
+        zip: tree.into_bytes()?,
+        folder,
+        report,
+    })
 }
 pub fn verify_bundle(
     root: &Path,

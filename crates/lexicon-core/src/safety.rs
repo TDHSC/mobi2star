@@ -19,16 +19,23 @@ pub fn hex(bytes: &[u8]) -> String {
     out
 }
 pub fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
-    let mut file = File::open(path)?;
-    if file.metadata()?.len() > limit as u64 {
-        return Err(Error::Limit(format!(
-            "{} exceeds {} bytes",
-            path.display(),
-            limit
-        )));
+    let file = File::open(path)?;
+    let length = file.metadata()?.len();
+    read_limited(file, length, limit, &path.display())
+}
+/// Reads all of `reader`, whose declared size is `length`, refusing more
+/// than `limit` bytes even if the declared size was wrong.
+pub fn read_limited(
+    reader: impl Read,
+    length: u64,
+    limit: usize,
+    name: &dyn std::fmt::Display,
+) -> Result<Vec<u8>> {
+    if length > limit as u64 {
+        return Err(Error::Limit(format!("{name} exceeds {limit} bytes")));
     }
     let mut data = Vec::new();
-    (&mut file).take(limit as u64 + 1).read_to_end(&mut data)?;
+    reader.take(limit as u64 + 1).read_to_end(&mut data)?;
     if data.len() > limit {
         return Err(Error::Limit("input grew beyond limit while reading".into()));
     }

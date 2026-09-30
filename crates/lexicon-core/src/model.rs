@@ -93,6 +93,17 @@ impl Default for Limits {
         }
     }
 }
+impl Limits {
+    /// For a browser tab. WebAssembly memory is at most 4 GiB and holds the
+    /// source, the parsed book and the output archive at once.
+    pub fn browser() -> Self {
+        Self {
+            input_bytes: 256 * 1024 * 1024,
+            output_bytes: 1536 * 1024 * 1024,
+            ..Self::default()
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Alias {

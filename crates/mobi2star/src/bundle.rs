@@ -221,7 +221,7 @@ pub(crate) fn report(
 pub(crate) fn build_dictionary(
     source: Vec<u8>,
     tree: &mut impl Tree,
-    folder: &dyn Fn(&str) -> String,
+    folder: impl FnOnce(&str) -> String,
     limits: &Limits,
     options: OutputOptions,
     progress: &mut dyn FnMut(Stage),

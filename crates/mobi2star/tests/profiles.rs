@@ -1,10 +1,16 @@
 //! The dictionary-only profile writes exactly the full bundle's dictionary,
-//! for both backends and every reader, and says what it did not check.
+//! for both backends and every reader, and says what it did not check. The
+//! browser's zip archive holds exactly the same files.
 mod common;
 use common::{fixture, tree_files, two_set_fixture, PAGE};
 use lexicon_core::{Error, LabelLanguage, Limits, TargetReader};
 use mobi2star::{Backend, ConversionReport, OutputOptions, Stage};
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{Cursor, Read},
+    path::Path,
+};
 
 const UNCOMPRESSED: &[u8] = include_bytes!("../../../tests/fixtures/uncompressed.mobi");
 const HUFF: &[u8] = include_bytes!("../../../tests/fixtures/huff.mobi");
@@ -31,6 +37,23 @@ fn full_dictionary(bundle: &Path, report: &ConversionReport) -> BTreeMap<String,
             .filter(|(path, _)| !is_compiled_extra(path))
             .collect(),
     }
+}
+
+/// Every file in a zip archive, all of which must be under `folder/`.
+fn unzip(zip: &[u8], folder: &str) -> BTreeMap<String, Vec<u8>> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(zip)).unwrap();
+    let files: BTreeMap<String, Vec<u8>> = (0..archive.len())
+        .map(|i| {
+            let mut file = archive.by_index(i).unwrap();
+            let name = file.name().strip_prefix(&format!("{folder}/")).unwrap();
+            let name = name.to_owned();
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).unwrap();
+            (name, bytes)
+        })
+        .collect();
+    assert_eq!(files.len(), archive.len());
+    files
 }
 
 /// Progress starts with parsing, counts every payload up to the total and
@@ -113,6 +136,26 @@ fn stardict_profile_writes_the_full_bundles_dictionary() {
             )
             .unwrap();
             let context = format!("{name} {reader:?}");
+            let mut zip_stages = Vec::new();
+            let archive = mobi2star::convert_dictionary_zip(
+                source.clone(),
+                &Limits::browser(),
+                options,
+                Backend::Auto,
+                &mut |stage| zip_stages.push(stage),
+            )
+            .unwrap();
+            assert_eq!(
+                unzip(&archive.zip, &archive.folder),
+                tree_files(&bundle.join("StarDict")),
+                "{context}"
+            );
+            assert_eq!(
+                serde_json::to_value(&archive.report).unwrap(),
+                serde_json::to_value(&report).unwrap(),
+                "{context}"
+            );
+            assert_eq!(zip_stages, stages, "{context}");
             let published: Vec<String> = fs::read_dir(&bundle)
                 .unwrap()
                 .map(|entry| entry.unwrap().file_name().into_string().unwrap())
@@ -177,4 +220,48 @@ fn a_failed_dictionary_conversion_publishes_nothing() {
     );
     assert!(matches!(result, Err(Error::Unsupported(_))));
     assert!(!output.exists());
+}
+
+#[test]
+fn zip_archives_are_deterministic_and_named_from_the_title() {
+    for source in [fixture(PAGE), two_set_fixture(), UNCOMPRESSED.to_vec()] {
+        let build = || {
+            mobi2star::convert_dictionary_zip(
+                source.clone(),
+                &Limits::browser(),
+                OutputOptions::default(),
+                Backend::Auto,
+                &mut |_| {},
+            )
+            .unwrap()
+        };
+        let (first, second) = (build(), build());
+        assert_eq!(first.zip, second.zip);
+        assert_eq!(first.folder, second.folder);
+    }
+    let archive = mobi2star::convert_dictionary_zip(
+        fixture(PAGE),
+        &Limits::browser(),
+        OutputOptions::default(),
+        Backend::Auto,
+        &mut |_| {},
+    )
+    .unwrap();
+    assert_eq!(archive.folder, "Original Rust SRCS fixture");
+}
+
+#[test]
+fn zip_input_is_bounded() {
+    let limits = Limits {
+        input_bytes: HUFF.len() - 1,
+        ..Limits::browser()
+    };
+    let result = mobi2star::convert_dictionary_zip(
+        HUFF.to_vec(),
+        &limits,
+        OutputOptions::default(),
+        Backend::Auto,
+        &mut |_| {},
+    );
+    assert!(matches!(result, Err(Error::Limit(_))));
 }
