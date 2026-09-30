@@ -54,6 +54,8 @@ export const TEXT = {
       previewOne: 'Showing “{word}”.',
       previewMany: '{n} results for “{word}”.',
       previewNoImages: 'Images do not appear: this reader never receives the res/ folder.',
+      pageLicense: 'This page, including its preview, is free software under the GNU AGPL 3.0 or later.',
+      mupdfSource: 'MuPDF 1.27.0 source',
     },
     apps: {
       koreader: 'KOReader',
@@ -200,6 +202,8 @@ export const TEXT = {
       previewOne: '正在显示“{word}”。',
       previewMany: '“{word}”有 {n} 个结果。',
       previewNoImages: '不显示图片：这个阅读器拿不到 res/ 文件夹。',
+      pageLicense: '本页面（含预览功能）是依 GNU AGPL 3.0 或更新版本发布的自由软件。',
+      mupdfSource: 'MuPDF 1.27.0 源代码',
     },
     apps: {
       koreader: 'KOReader',

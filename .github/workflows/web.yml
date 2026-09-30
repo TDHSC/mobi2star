@@ -40,6 +40,11 @@ jobs:
         env:
           VERSION: ${{ steps.bindgen.outputs.version }}
         run: cargo install wasm-bindgen-cli --locked --version "$VERSION" --root ~/.wasm-bindgen
+      - name: Restore the vendored MuPDF and fonts
+        uses: actions/cache@v6
+        with:
+          path: target/web-vendor
+          key: web-vendor-${{ hashFiles('tools/web-vendor.lock') }}
       - name: Put wasm-bindgen on the PATH
         run: echo "$HOME/.wasm-bindgen/bin" >> "$GITHUB_PATH"
       - name: Lint the browser crate for WebAssembly

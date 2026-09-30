@@ -152,6 +152,9 @@ for (const lang of LANGUAGES) {
 }
 check(isDeepStrictEqual(Object.keys(choices.previews).sort(), [...choices.readers].sort()), 'every choice has previews');
 check(format('{a} of {b}', { a: 1, b: 2 }) === '1 of 2', 'format');
+for (const name of readFileSync(join(assets, 'files.txt'), 'utf8').trim().split('\n')) {
+  check(/^[0-9A-Za-z._-]+$/.test(name) && !name.startsWith('.'), `asset name ${name} would not be kept`);
+}
 const page = readFileSync('_site/index.html', 'utf8');
 check(!page.includes('__VERSION__') && page.includes(`v/${versions[0]}/app.js`), 'index.html version');
 let n = 0;

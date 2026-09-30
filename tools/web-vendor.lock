@@ -1,0 +1,17 @@
+# Files the browser page bundles for its KOReader preview but this
+# repository does not contain. tools/build-web.sh downloads each into
+# target/web-vendor/, requires its SHA-256, and copies what the page needs
+# into _site/v/<version>/.
+#
+# MuPDF is the npm build of MuPDF 1.27.0 (KOReader pins 1.27.2), from
+# https://github.com/ArtifexSoftware/mupdf/tree/7956afdc373785865f651fcb76f3112ab1208ba0
+# The fonts are the ones KOReader ships, from koreader-fonts 0469769.
+#
+# name                        sha256                                                            license            url
+mupdf-1.27.0.tgz              e4b78969319ed148f3110c5cf0158beb851ce72ecf30ef9d0019fe3a41004d78  AGPL-3.0-or-later  https://registry.npmjs.org/mupdf/-/mupdf-1.27.0.tgz
+NotoSans-Regular.ttf          dac8e68fe43fca59d522fa5f763322cfb4a919c28957656c58e7836d915307d0  OFL-1.1            https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/noto/NotoSans-Regular.ttf
+NotoSans-Bold.ttf             d62ff7c27ae901ae9b5c3ef0cae4a1f091e28a7ce62b9e0fed86a38185f84971  OFL-1.1            https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/noto/NotoSans-Bold.ttf
+NotoSans-Italic.ttf           fd0142325f12c857b3443c2390f7f4a697b5c4017fbad4cfd16218cf33c4ddba  OFL-1.1            https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/noto/NotoSans-Italic.ttf
+NotoSans-BoldItalic.ttf       4a44bc45d89669b612d00483f01233b43caaef695f1998702126154a37093180  OFL-1.1            https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/noto/NotoSans-BoldItalic.ttf
+NotoSansCJKsc-Regular.otf     1652500938055a232cfbfa321de6ebaadfc5635dd9f75e369bc991d14a6512dd  OFL-1.1            https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/noto/NotoSansCJKsc-Regular.otf
+noto-LICENSE.txt              0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb  OFL-1.1            https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/noto/LICENSE
