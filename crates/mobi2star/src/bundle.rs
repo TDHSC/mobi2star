@@ -21,7 +21,10 @@ pub struct FileDigest {
     pub bytes: u64,
     pub sha256: String,
 }
-pub(crate) const SCHEMA: u32 = 2;
+/// Manifest schema numbers are unique across both bundle formats: compiled
+/// 1 and 4, SRCS 2 and 3. Releases up to 0.3 told the formats apart by the
+/// number alone (2 meant SRCS), so no number is ever reused for the other.
+pub(crate) const SCHEMA: u32 = 4;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
