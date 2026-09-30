@@ -76,21 +76,9 @@ fn candidates(word: &str) -> Vec<String> {
 /// index entry equal to it ignoring case, else the first synonym. One
 /// entry per dictionary.
 fn lookup(dictionary: &Dictionary, word: &str) -> Option<usize> {
-    let index = dictionary.index();
-    candidates(word).iter().find_map(|candidate| {
-        let lower = candidate.to_lowercase();
-        index
-            .entries
-            .iter()
-            .position(|e| e.word.to_lowercase() == lower)
-            .or_else(|| {
-                index
-                    .synonyms
-                    .iter()
-                    .find(|s| s.word.to_lowercase() == lower)
-                    .map(|s| s.target as usize)
-            })
-    })
+    candidates(word)
+        .iter()
+        .find_map(|candidate| dictionary.lookup_lowercase_first(candidate))
 }
 
 /// The popup Readest shows: the query as title, the entry's card with its

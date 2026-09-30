@@ -143,15 +143,9 @@ struct Block {
 /// The blocks PyGlossary writes for one entry: its terms (the headword,
 /// then its synonyms in .syn order) grouped by prefix, keyed by prefix.
 fn blocks(dictionary: &Dictionary, entry: usize) -> Result<BTreeMap<String, Block>> {
-    let index = dictionary.index();
     let main = dictionary.entry(entry)?.word.clone();
-    let terms = std::iter::once(main.clone()).chain(
-        index
-            .synonyms
-            .iter()
-            .filter(|s| s.target as usize == entry)
-            .map(|s| s.word.clone()),
-    );
+    let terms =
+        std::iter::once(main.clone()).chain(dictionary.synonyms_of(entry).map(|s| s.word.clone()));
     let mut groups: Vec<(String, Vec<String>)> = Vec::new();
     for term in terms {
         let key = prefix(&term);

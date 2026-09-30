@@ -13,8 +13,10 @@ pub struct Dictionary {
     /// Files under `res/`, by their path inside it.
     resources: BTreeMap<String, Vec<u8>>,
     entry_limit: usize,
-    /// Folded key to entries, for GoldenDict-style lookups; see `lookup`.
+    /// Lookup indexes built on first use; see `lookup`.
     pub(crate) folded: OnceCell<BTreeMap<String, Vec<usize>>>,
+    pub(crate) lowercase: OnceCell<crate::lookup::Lowercase>,
+    pub(crate) synonyms_by_target: OnceCell<Vec<usize>>,
 }
 
 impl Dictionary {
@@ -36,6 +38,8 @@ impl Dictionary {
             resources,
             entry_limit: limits.entry_bytes,
             folded: OnceCell::new(),
+            lowercase: OnceCell::new(),
+            synonyms_by_target: OnceCell::new(),
         })
     }
     pub fn bookname(&self) -> &str {

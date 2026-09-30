@@ -46,6 +46,14 @@ pub fn is_internal_key(word: &str) -> bool {
     false
 }
 
+/// The first entry for each lowercase headword, and the target of the
+/// first synonym for each lowercase synonym, in index order.
+#[derive(Debug, Default)]
+pub(crate) struct Lowercase {
+    entries: BTreeMap<String, usize>,
+    synonyms: BTreeMap<String, usize>,
+}
+
 impl Dictionary {
     /// Entries whose headword or synonym is exactly `word`.
     pub fn lookup_exact(&self, word: &str) -> Vec<usize> {
@@ -96,6 +104,50 @@ impl Dictionary {
                 .collect()
         });
         folded.get(&fold(word)).cloned().unwrap_or_default()
+    }
+
+    /// The first entry whose headword equals `word` ignoring case, else the
+    /// target of the first synonym that does, as Readest looks words up.
+    /// The lowercase index is built on first use.
+    pub fn lookup_lowercase_first(&self, word: &str) -> Option<usize> {
+        let lowercase = self.lowercase.get_or_init(|| {
+            let index = self.index();
+            let mut lowercase = Lowercase::default();
+            for (n, entry) in index.entries.iter().enumerate() {
+                lowercase
+                    .entries
+                    .entry(entry.word.to_lowercase())
+                    .or_insert(n);
+            }
+            for synonym in &index.synonyms {
+                lowercase
+                    .synonyms
+                    .entry(synonym.word.to_lowercase())
+                    .or_insert(synonym.target as usize);
+            }
+            lowercase
+        });
+        let lower = word.to_lowercase();
+        lowercase
+            .entries
+            .get(&lower)
+            .or_else(|| lowercase.synonyms.get(&lower))
+            .copied()
+    }
+
+    /// The synonyms that lead to `entry`, in `.syn` order.
+    pub fn synonyms_of(&self, entry: usize) -> impl Iterator<Item = &Synonym> {
+        let synonyms = &self.index().synonyms;
+        let by_target = self.synonyms_by_target.get_or_init(|| {
+            let mut order: Vec<usize> = (0..synonyms.len()).collect();
+            order.sort_by_key(|&n| synonyms[n].target);
+            order
+        });
+        let first = by_target.partition_point(|&n| (synonyms[n].target as usize) < entry);
+        by_target[first..]
+            .iter()
+            .map(|&n| &synonyms[n])
+            .take_while(move |s| s.target as usize == entry)
     }
 
     /// Up to `limit` distinct headwords and synonyms that start with
@@ -182,6 +234,28 @@ mod tests {
             ["cat"],
             "links need routes"
         );
+    }
+
+    #[test]
+    fn lowercase_lookups_take_the_first_match() {
+        let d = sample();
+        let first = |w: &str| {
+            d.lookup_lowercase_first(w)
+                .map(|n| d.index().entries[n].word.clone())
+        };
+        assert_eq!(first("RUN").as_deref(), Some("Run"), "index order");
+        assert_eq!(first("CAFÉ").as_deref(), Some("café"), "not only ASCII");
+        assert_eq!(first("ran").as_deref(), Some("run"), "through a synonym");
+        assert_eq!(first("dog"), None);
+    }
+
+    #[test]
+    fn synonyms_are_found_by_their_target() {
+        let d = sample();
+        let run = d.lookup_exact("run")[0];
+        let words: Vec<&str> = d.synonyms_of(run).map(|s| s.word.as_str()).collect();
+        assert_eq!(words, ["RAN", "runs"]);
+        assert_eq!(d.synonyms_of(d.lookup_exact("Run")[0]).count(), 0);
     }
 
     #[test]
