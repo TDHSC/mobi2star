@@ -1,79 +1,13 @@
 //! Fixtures are produced entirely in Rust from this project's original synthetic
 //! MOBI. No publisher content or external interpreter is needed by this suite.
 mod common;
-use common::{edit_manifest, rewrite_with_digest};
+use common::{
+    edit_manifest, fixture, rewrite_with_digest, two_set_fixture, write_source, BASE, PAGE,
+};
 use lexicon_core::{sha256, LabelLanguage, Limits, TargetReader, LINK_TAG};
 use mobi2star::OutputOptions;
-use mobi_reader::{pdb::PalmDatabase, Container};
-use std::{
-    fs,
-    io::{Cursor, Write},
-    path::Path,
-};
-use zip::{write::SimpleFileOptions, ZipWriter};
-const BASE: &[u8] = include_bytes!("../../../tests/fixtures/uncompressed.mobi");
-const PAGE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns:idx="idx"><head><title>Original synthetic fixture</title><link rel="stylesheet" href="style.css"/></head><body>
-<p>前言：本词典用于测试。</p>
-<idx:entry><idx:orth value="run"><idx:infl><idx:iform value="runs"/></idx:infl></idx:orth><div id="first" class="definition"><b>run</b><p>第一义项：中文与 café。</p><img src="image.png" alt="测试图片"/><a title="x &gt; y" href="#third">显示文字不同</a></div></idx:entry>
-<idx:entry><idx:orth value="run"/><div id="second"><b>run</b><p>A separate homograph, never overwritten.</p></div></idx:entry>
-<idx:entry><idx:orth value="café"/><div id="third"><b>café</b><p>重音不能被归一化丢失。<a href="#first">返回</a></p></div></idx:entry>
-<p>附录：符号说明、版权测试文本。</p></body></html>"##;
-const OPF: &str = r#"<?xml version="1.0"?><package xmlns:dc="dc"><metadata><dc:title>Original Rust SRCS fixture</dc:title></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="css" href="style.css" media-type="text/css"/><item id="img" href="image.png" media-type="image/png"/></manifest><spine><itemref idref="a"/></spine></package>"#;
-fn zip_files(files: &[(&str, &[u8])]) -> Vec<u8> {
-    let mut zip = ZipWriter::new(Cursor::new(Vec::new()));
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    for (name, bytes) in files {
-        zip.start_file(*name, options).unwrap();
-        zip.write_all(bytes).unwrap();
-    }
-    zip.finish().unwrap().into_inner()
-}
-const STYLE: &[u8] = b"body{font-family:serif}.definition{font-weight:normal}";
-fn zip_source(page: &str, image: &[u8]) -> Vec<u8> {
-    zip_files(&[
-        ("OEBPS/a.xhtml", page.as_bytes()),
-        ("OEBPS/package.opf", OPF.as_bytes()),
-        ("OEBPS/style.css", STYLE),
-        ("OEBPS/image.png", image),
-    ])
-}
-fn fixture(page: &str) -> Vec<u8> {
-    fixture_from(|image| zip_source(page, image))
-}
-/// A MOBI built from the synthetic base with `archive(image)` as its SRCS
-/// record; `image` is the base's image record.
-fn fixture_from(archive: impl FnOnce(&[u8]) -> Vec<u8>) -> Vec<u8> {
-    let pdb = PalmDatabase::parse(BASE).unwrap();
-    let mut records = pdb
-        .records
-        .iter()
-        .map(|s| s.bytes(BASE).unwrap().to_vec())
-        .collect::<Vec<_>>();
-    let archive = archive(records.last().unwrap());
-    let mut srcs = b"SRCS\0\0\0\x10\0\0\0\0\0\0\0\0".to_vec();
-    srcs.extend(archive);
-    records.push(srcs);
-    let count = records.len();
-    let mut out = BASE[..78].to_vec();
-    out[76..78].copy_from_slice(&(count as u16).to_be_bytes());
-    let mut offset = 78 + 8 * count + 2;
-    for (i, r) in records.iter().enumerate() {
-        out.extend_from_slice(&(offset as u32).to_be_bytes());
-        out.extend_from_slice(&(i as u32).to_be_bytes());
-        offset += r.len();
-    }
-    out.extend_from_slice(&[0, 0]);
-    for r in records {
-        out.extend(r);
-    }
-    out
-}
-fn write_source(root: &Path, page: &str) -> std::path::PathBuf {
-    let path = root.join("original.mobi");
-    fs::write(&path, fixture(page)).unwrap();
-    path
-}
+use mobi_reader::Container;
+use std::{fs, path::Path};
 #[test]
 fn rust_srcs_conversion_reopens_all_content() {
     let dir = tempfile::tempdir().unwrap();
@@ -294,19 +228,7 @@ fn each_reader_gets_its_stylesheet_delivery() {
 }
 #[test]
 fn pages_with_different_stylesheets_keep_their_own_rules() {
-    // A second page that links a different stylesheet forms a second style set.
-    let second = r#"<html xmlns:idx="idx"><head><title>Second chapter</title><link rel="stylesheet" href="note.css"/></head><body><p class="note">A note page.</p></body></html>"#;
-    let opf = r#"<?xml version="1.0"?><package xmlns:dc="dc"><metadata><dc:title>Original Rust SRCS fixture</dc:title></metadata><manifest><item id="a" href="a.xhtml" media-type="application/xhtml+xml"/><item id="b" href="b.xhtml" media-type="application/xhtml+xml"/><item id="css" href="style.css" media-type="text/css"/><item id="note" href="note.css" media-type="text/css"/><item id="img" href="image.png" media-type="image/png"/></manifest><spine><itemref idref="a"/><itemref idref="b"/></spine></package>"#;
-    let mobi = fixture_from(|image| {
-        zip_files(&[
-            ("OEBPS/a.xhtml", PAGE.as_bytes()),
-            ("OEBPS/b.xhtml", second.as_bytes()),
-            ("OEBPS/package.opf", opf.as_bytes()),
-            ("OEBPS/style.css", STYLE),
-            ("OEBPS/note.css", b".note{color:gray}"),
-            ("OEBPS/image.png", image),
-        ])
-    });
+    let mobi = two_set_fixture();
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("two-sets.mobi");
     fs::write(&source, &mobi).unwrap();
