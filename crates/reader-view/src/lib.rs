@@ -11,10 +11,13 @@
 mod app;
 mod archive;
 mod dictionary;
+pub mod goldendict_mobile;
 pub mod goldendict_ng;
 pub mod html;
+pub mod kobo;
 pub mod koreader;
 mod lookup;
+pub mod readest;
 pub mod url;
 mod view;
 
