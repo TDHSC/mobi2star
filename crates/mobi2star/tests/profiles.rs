@@ -4,7 +4,7 @@
 mod common;
 use common::{fixture, tree_files, two_set_fixture, PAGE};
 use lexicon_core::{Error, LabelLanguage, Limits, TargetReader};
-use mobi2star::{Backend, ConversionReport, OutputOptions, Stage};
+use mobi2star::{Backend, ConversionReport, OutputOptions, Profile, Stage};
 use std::{
     collections::BTreeMap,
     fs,
@@ -82,12 +82,22 @@ fn check_report(full: ConversionReport, dictionary: &ConversionReport) {
             let scope = dictionary.verification_scope.join("\n");
             assert!(!scope.contains("regenerated") && !scope.contains("ZIP files"));
             assert_eq!(full.verification_scope.len(), scope.lines().count() + 1);
+            assert_eq!(
+                (full.profile, dictionary.profile),
+                (Profile::Bundle, Profile::Stardict)
+            );
             full.verification_scope = dictionary.verification_scope.clone();
+            full.profile = Profile::Stardict;
             assert_eq!(&full, dictionary);
         }
         (ConversionReport::Compiled(mut full), ConversionReport::Compiled(dictionary)) => {
             assert!(!dictionary.notes.join("\n").contains("manifest"));
+            assert_eq!(
+                (full.profile, dictionary.profile),
+                (Profile::Bundle, Profile::Stardict)
+            );
             full.notes.pop();
+            full.profile = Profile::Stardict;
             assert_eq!(&full, dictionary);
         }
         _ => panic!("the profiles chose different backends"),
@@ -171,6 +181,10 @@ fn stardict_profile_writes_the_full_bundles_dictionary() {
             let saved: serde_json::Value =
                 serde_json::from_slice(&fs::read(bundle.join("report.json")).unwrap()).unwrap();
             assert_eq!(saved, serde_json::to_value(&report).unwrap(), "{context}");
+            assert_eq!(saved["profile"], "stardict", "{context}");
+            let full_saved: serde_json::Value =
+                serde_json::from_slice(&fs::read(full.join("report.json")).unwrap()).unwrap();
+            assert!(full_saved.get("profile").is_none(), "{context}");
             check_report(full_report, &report);
             check_progress(&stages);
         }
@@ -201,6 +215,30 @@ fn dictionary_only_output_cannot_be_verified() {
             Err(Error::Unsupported(message)) => assert!(message.contains("--profile stardict")),
             other => panic!("expected the dictionary-only error, got {other:?}"),
         }
+    }
+}
+
+/// A full bundle that lost its manifest is damaged, not dictionary-only:
+/// it must not get the dictionary-only message.
+#[test]
+fn a_full_bundle_without_its_manifest_is_not_called_dictionary_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.mobi");
+    fs::write(&input, fixture(PAGE)).unwrap();
+    let limits = Limits::default();
+    let (bundle, _) = mobi2star::convert_with_backend(
+        &input,
+        &dir.path().join("out"),
+        &limits,
+        OutputOptions::default(),
+        Backend::Auto,
+    )
+    .unwrap();
+    fs::remove_file(bundle.join("manifest.json")).unwrap();
+    match mobi2star::verify_bundle(&bundle, None, &limits) {
+        Err(Error::Unsupported(message)) => panic!("called dictionary-only: {message}"),
+        Err(_) => {}
+        Ok(_) => panic!("a bundle without a manifest verified"),
     }
 }
 

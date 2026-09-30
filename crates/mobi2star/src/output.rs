@@ -13,14 +13,32 @@ pub struct OutputOptions {
     pub reader: TargetReader,
 }
 
-/// What a conversion produces.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+/// What a conversion produces. Reports of dictionary-only output record
+/// it; full-bundle reports omit it, so their bytes are unchanged.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    clap::ValueEnum,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum Profile {
     /// The full bundle: dictionary, audit files, report and manifest; verifiable later
     #[default]
     Bundle,
     /// Only StarDict/ and report.json, checked while converting; no manifest, so `verify` cannot check it later
     Stardict,
+}
+
+impl Profile {
+    pub fn is_bundle(&self) -> bool {
+        *self == Self::Bundle
+    }
 }
 
 /// Progress of a conversion, reported by count, never by time.
@@ -49,6 +67,7 @@ impl Default for OutputOptions {
 
 #[cfg(test)]
 mod tests {
+    use super::Profile;
     use clap::ValueEnum;
     use lexicon_core::{LabelLanguage, TargetReader};
     #[test]
@@ -62,6 +81,10 @@ mod tests {
         for labels in LabelLanguage::value_variants() {
             let cli = labels.to_possible_value().unwrap();
             assert_eq!(serde_json::to_value(labels).unwrap(), cli.get_name());
+        }
+        for profile in Profile::value_variants() {
+            let cli = profile.to_possible_value().unwrap();
+            assert_eq!(serde_json::to_value(profile).unwrap(), cli.get_name());
         }
     }
 }

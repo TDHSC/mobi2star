@@ -3,7 +3,7 @@
 ## Unreleased
 
 - New: convert in your browser at <https://tdhsc.github.io/mobi2star/>. The page runs the same Rust converter as WebAssembly, so the file is never uploaded, and offers a zip holding the StarDict folder. It has English and Chinese text, accepts files up to 256 MiB, and is republished with every release. See docs/WEB.md.
-- New `convert --profile stardict` publishes only `StarDict/` and `report.json`: the files the browser produces, byte-identical to the full bundle's `StarDict/`. It runs the checks that happen during conversion; there is no manifest, so `verify` refuses it with a message that says so. The report's scope lists only the checks that ran.
+- New `convert --profile stardict` publishes only `StarDict/` and `report.json`: the files the browser produces, byte-identical to the full bundle's `StarDict/`. It runs the checks that happen during conversion; there is no manifest, so `verify` refuses it with a message that says so. Its report records `"profile": "stardict"` and lists only the checks that ran; full-bundle reports are unchanged.
 - Full bundles are byte-identical to 0.4.0-alpha.2 apart from the version in `manifest.json`.
 - Compiled-backend bundles are now held to `--max-output-mib` as a whole while writing, as SRCS bundles already were, rather than only their payloads.
 - Library:

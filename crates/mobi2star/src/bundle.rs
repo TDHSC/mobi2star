@@ -64,6 +64,9 @@ pub struct Report {
     pub offset_bits: u8,
     pub reader: TargetReader,
     pub notes: Vec<String>,
+    /// Absent from full bundles; see `Profile`.
+    #[serde(default, skip_serializing_if = "Profile::is_bundle")]
+    pub profile: Profile,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct RecordAudit {
@@ -200,7 +203,7 @@ pub(crate) fn report(
         output_entries: doc.entries.len(), output_synonyms: doc.source_aliases + doc.entries.len(),
         source_rawml_bytes: doc.rawml.len(), covered_rawml_bytes: doc.rawml.len(), copied_resources: doc.resources.len(),
         resolved_resource_references: plan.resource_links.len(), resolved_internal_links: plan.links.len(),
-        external_links_retained: plan.external_links, skipped_entries: 0, offset_bits, reader,
+        external_links_retained: plan.external_links, skipped_entries: 0, offset_bits, reader, profile,
         notes: vec![
             "Coverage measures the union of decompressed source byte ranges; it is not proof of universal MOBI semantic support.".into(),
             "All source spellings and explicit inflections are retained without Unicode normalization; reader lookup/folding may differ.".into(),

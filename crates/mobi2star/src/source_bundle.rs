@@ -55,6 +55,9 @@ pub struct SourceReport {
     pub offset_bits: u8,
     pub reader: TargetReader,
     pub verification_scope: Vec<String>,
+    /// Absent from full bundles; see `Profile`.
+    #[serde(default, skip_serializing_if = "Profile::is_bundle")]
+    pub profile: Profile,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -572,6 +575,7 @@ fn report(
         offset_bits: options.offset_bits,
         reader: options.reader,
         verification_scope: verification_scope(profile),
+        profile,
     }
 }
 /// The checks each profile runs. Only the full bundle keeps every source
