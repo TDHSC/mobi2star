@@ -4,7 +4,6 @@
 mod catalog;
 mod reader;
 mod style;
-mod writer;
 pub use catalog::{
     encode_catalog, write_catalog, Catalog, CatalogAlias, CatalogItem, EncodedCatalog, Payload,
     PayloadWriter,
@@ -14,7 +13,6 @@ pub use reader::{check_payloads, dictionary_file, open, parse, read_payload, Par
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 pub use style::{stylesheet_files, stylesheet_paths};
-pub use writer::{write, WrittenDictionary, WrittenEntry};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct IndexEntry {

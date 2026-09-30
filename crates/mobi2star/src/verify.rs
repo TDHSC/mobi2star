@@ -1,14 +1,14 @@
 use crate::{
-    bundle::{collect_files, report, RecordAudit, SCHEMA},
+    bundle::{collect_files, report, RecordAudit, WrittenEntry, SCHEMA},
     manifest::check_header,
     Manifest, Report,
 };
 use lexicon_core::{
-    checked_member, hash_file, read_bounded, sha256, Error, Limits, Metadata, Resource, Result,
-    StyleDelivery,
+    checked_member, hash_file, read_bounded, sha256, Document, Error, Limits, Metadata, Resource,
+    Result, StyleDelivery,
 };
 use serde::de::DeserializeOwned;
-use stardict_io::{compare_synonyms, compare_words, Synonym, WrittenEntry};
+use stardict_io::{compare_synonyms, compare_words, IndexEntry, ParsedDictionary, Synonym};
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -71,6 +71,78 @@ fn next_line(reader: &mut impl BufRead, cap: usize) -> Result<Option<Vec<u8>>> {
             return Ok(Some(line));
         }
     }
+}
+
+/// Checks a compiled dictionary against its source Document, independently
+/// of how it was written: entry count and order, every synonym and internal
+/// key, each provenance row's byte range and hashes, and every payload
+/// against a replay of the source-preserving edits. `next_row` yields the
+/// provenance rows in StarDict order; `payload` reads one entry's HTML.
+pub(crate) fn check_entries(
+    doc: &Document,
+    plan: &html_preserve::Plan,
+    parsed: &ParsedDictionary,
+    style: StyleDelivery,
+    next_row: &mut dyn FnMut() -> Result<Option<WrittenEntry>>,
+    payload: &mut dyn FnMut(&IndexEntry) -> Result<String>,
+) -> Result<()> {
+    let mut ordered: Vec<&lexicon_core::Entry> = doc.entries.iter().collect();
+    ordered.sort_by(|a, b| compare_words(&a.headword, &b.headword).then(a.id.cmp(&b.id)));
+    ensure(
+        ordered.len() == parsed.entries.len(),
+        "source/output entry count mismatch",
+    )?;
+    let ordinals: BTreeMap<u64, u32> = ordered
+        .iter()
+        .enumerate()
+        .map(|(n, e)| (e.id, n as u32))
+        .collect();
+    let mut expected_synonyms = Vec::new();
+    for entry in &ordered {
+        for alias in &entry.aliases {
+            expected_synonyms.push(Synonym {
+                word: alias.word.clone(),
+                target: ordinals[&entry.id],
+            });
+        }
+        expected_synonyms.push(Synonym {
+            word: entry.internal_key(&doc.namespace),
+            target: ordinals[&entry.id],
+        });
+    }
+    expected_synonyms.sort_by(compare_synonyms);
+    ensure(
+        expected_synonyms == parsed.synonyms,
+        "missing, changed, duplicated or misrouted synonym/inflection",
+    )?;
+    for (ordinal, (expected, actual)) in ordered.iter().zip(&parsed.entries).enumerate() {
+        let row = next_row()?.ok_or_else(|| Error::Verify("missing entry provenance".into()))?;
+        ensure(
+            row.ordinal as usize == ordinal && &row.entry == *expected,
+            "source entry/span/alias provenance mismatch",
+        )?;
+        ensure(
+            actual.word == expected.headword
+                && row.offset == actual.offset
+                && row.size == actual.size,
+            "entry key or byte range mismatch",
+        )?;
+        ensure(
+            row.source_sha256 == sha256(expected.span.bytes(&doc.rawml)?),
+            "source entry content hash mismatch",
+        )?;
+        let html = payload(actual)?;
+        ensure(
+            sha256(html.as_bytes()) == row.rendered_sha256,
+            "rendered entry content hash mismatch",
+        )?;
+        let replay = html_preserve::render(doc, expected, plan, style)?;
+        ensure(
+            html == replay,
+            "DICT differs from a replay of source-preserving edits",
+        )?;
+    }
+    ensure(next_row()?.is_none(), "extra entry provenance rows")
 }
 
 /// Reopen hashes, parse actual StarDict files, then reconstruct source expectations.
@@ -183,69 +255,19 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
         parsed.offset_bits == manifest.offset_bits,
         "offset width differs from manifest",
     )?;
-    let mut ordered: Vec<&lexicon_core::Entry> = doc.entries.iter().collect();
-    ordered.sort_by(|a, b| compare_words(&a.headword, &b.headword).then(a.id.cmp(&b.id)));
-    ensure(
-        ordered.len() == parsed.entries.len(),
-        "source/output entry count mismatch",
-    )?;
-    let ordinals: BTreeMap<u64, u32> = ordered
-        .iter()
-        .enumerate()
-        .map(|(n, e)| (e.id, n as u32))
-        .collect();
-    let mut expected_synonyms = Vec::new();
-    for entry in &ordered {
-        for alias in &entry.aliases {
-            expected_synonyms.push(Synonym {
-                word: alias.word.clone(),
-                target: ordinals[&entry.id],
-            });
-        }
-        expected_synonyms.push(Synonym {
-            word: entry.internal_key(&doc.namespace),
-            target: ordinals[&entry.id],
-        });
-    }
-    expected_synonyms.sort_by(compare_synonyms);
-    ensure(
-        expected_synonyms == parsed.synonyms,
-        "missing, changed, duplicated or misrouted synonym/inflection",
-    )?;
     let mut provenance = BufReader::new(File::open(checked_member(root, "entries.jsonl")?)?);
     let mut payload_file = File::open(stardict_io::dictionary_file(root)?)?;
-    for (ordinal, (expected, actual)) in ordered.iter().zip(&parsed.entries).enumerate() {
-        let line = next_line(&mut provenance, limits.input_bytes)?
-            .ok_or_else(|| Error::Verify("missing entry provenance".into()))?;
-        let row: WrittenEntry = serde_json::from_slice(&line)?;
-        ensure(
-            row.ordinal as usize == ordinal && &row.entry == *expected,
-            "source entry/span/alias provenance mismatch",
-        )?;
-        ensure(
-            actual.word == expected.headword
-                && row.offset == actual.offset
-                && row.size == actual.size,
-            "entry key or byte range mismatch",
-        )?;
-        ensure(
-            row.source_sha256 == sha256(expected.span.bytes(&doc.rawml)?),
-            "source entry content hash mismatch",
-        )?;
-        let payload = stardict_io::read_payload(&mut payload_file, actual, limits.entry_bytes)?;
-        ensure(
-            sha256(payload.as_bytes()) == row.rendered_sha256,
-            "rendered entry content hash mismatch",
-        )?;
-        let replay = html_preserve::render(&doc, expected, &plan, style)?;
-        ensure(
-            payload == replay,
-            "DICT differs from a replay of source-preserving edits",
-        )?;
-    }
-    ensure(
-        next_line(&mut provenance, limits.input_bytes)?.is_none(),
-        "extra entry provenance rows",
+    check_entries(
+        &doc,
+        &plan,
+        &parsed,
+        style,
+        &mut || {
+            next_line(&mut provenance, limits.input_bytes)?
+                .map(|line| Ok(serde_json::from_slice(&line)?))
+                .transpose()
+        },
+        &mut |entry| stardict_io::read_payload(&mut payload_file, entry, limits.entry_bytes),
     )?;
     let saved_report: Report = json(root, "report.json", 1024 * 1024)?;
     let expected_report = report(&doc, &plan, parsed.offset_bits, manifest.reader);

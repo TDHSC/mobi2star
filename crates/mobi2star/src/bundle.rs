@@ -1,4 +1,5 @@
 use crate::{
+    dictionary::{check_written, DictionaryBuilder, DirReadBack, WrittenDictionary},
     manifest::TOOL,
     transaction::{sync_directory, Transaction},
     tree::{DiskTree, Tree},
@@ -6,10 +7,11 @@ use crate::{
 };
 use html_preserve::Plan;
 use lexicon_core::{
-    hash_file, read_bounded, sha256, EntryKind, Error, LabelLanguage, Limits, Result, Span,
-    TargetReader,
+    hash_file, read_bounded, sha256, Document, Entry, EntryKind, Error, LabelLanguage, Limits,
+    Result, Span, TargetReader,
 };
 use serde::{Deserialize, Serialize};
+use stardict_io::compare_words;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -105,6 +107,72 @@ pub(crate) fn collect_files(root: &Path) -> Result<Vec<String>> {
     files.sort();
     Ok(files)
 }
+/// One line of `entries.jsonl`: where an entry's payload landed and what it
+/// was rendered from.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct WrittenEntry {
+    pub entry: Entry,
+    pub ordinal: u32,
+    pub offset: u64,
+    pub size: u32,
+    pub source_sha256: String,
+    pub rendered_sha256: String,
+}
+/// The compiled dictionary at the bundle root and its provenance rows.
+pub(crate) struct CompiledDictionary {
+    pub written: WrittenDictionary,
+    pub rows: Vec<WrittenEntry>,
+}
+/// Writes the stylesheet, image resources and every entry in StarDict order.
+pub(crate) fn write_dictionary(
+    tree: &mut impl Tree,
+    document: &Document,
+    plan: &Plan,
+    limits: &Limits,
+    options: OutputOptions,
+) -> Result<CompiledDictionary> {
+    let style = options.reader.style_delivery();
+    for (path, bytes) in stardict_io::stylesheet_files(&plan.stylesheet, style) {
+        tree.put(&path, bytes)?;
+    }
+    for resource in &document.resources {
+        tree.put(
+            &format!("res/{}", resource.filename),
+            resource.source_span.bytes(&document.source)?,
+        )?;
+    }
+    let mut ordered: Vec<&Entry> = document.entries.iter().collect();
+    ordered.sort_by(|a, b| compare_words(&a.headword, &b.headword).then(a.id.cmp(&b.id)));
+    let mut builder = DictionaryBuilder::start(tree, "", limits, options.offset_bits)?;
+    let mut rows = Vec::new();
+    for entry in ordered {
+        let html = html_preserve::render(document, entry, plan, style)?;
+        let payload = builder.append(html.as_bytes())?;
+        builder.item(entry.id, entry.headword.clone(), payload);
+        for alias in &entry.aliases {
+            builder.alias(alias.word.clone(), entry.id);
+        }
+        builder.alias(entry.internal_key(&document.namespace), entry.id);
+        rows.push(WrittenEntry {
+            entry: entry.clone(),
+            ordinal: 0,
+            offset: payload.offset,
+            size: payload.size,
+            source_sha256: sha256(entry.span.bytes(&document.rawml)?),
+            rendered_sha256: sha256(html.as_bytes()),
+        });
+    }
+    let title = if document.metadata.title.is_empty() {
+        "Converted MOBI dictionary"
+    } else {
+        &document.metadata.title
+    };
+    let written = builder.finish(title, options.offset_bits, limits)?;
+    for row in &mut rows {
+        row.ordinal = written.encoded.catalog.ordinals[&row.entry.id];
+    }
+    Ok(CompiledDictionary { written, rows })
+}
 pub(crate) fn report(
     doc: &lexicon_core::Document,
     plan: &Plan,
@@ -148,13 +216,8 @@ pub fn convert(
     fs::create_dir(root.join("archive"))?;
     fs::create_dir(root.join("res"))?;
     let mut tree = DiskTree::new(root, limits);
-    let style = reader.style_delivery();
-    for (path, bytes) in stardict_io::stylesheet_files(&plan.stylesheet, style) {
-        tree.put(&path, bytes)?;
-    }
-    let written = stardict_io::write(root, &document, limits, offset_bits, |entry| {
-        html_preserve::render(&document, entry, &plan, style)
-    })?;
+    let compiled = write_dictionary(&mut tree, &document, &plan, limits, options)?;
+    check_written(&mut DirReadBack(root), &compiled.written, limits)?;
     tree.put("archive/source.mobi", &document.source)?;
     tree.put("archive/rawml.bin", &document.rawml)?;
     tree.put_json("archive/metadata.json", &document.metadata)?;
@@ -174,14 +237,8 @@ pub fn convert(
     tree.put_json("archive/records.json", &records)?;
     tree.put_json("resources.json", &document.resources)?;
     tree.put_json("edits.json", &plan)?;
-    for resource in &document.resources {
-        tree.put(
-            &format!("res/{}", resource.filename),
-            resource.source_span.bytes(&document.source)?,
-        )?;
-    }
     let entries = tree.stream("entries.jsonl")?;
-    for row in &written.entries {
+    for row in &compiled.rows {
         serde_json::to_writer(&mut *entries, row)?;
         entries.write_all(b"\n")?;
     }
@@ -214,7 +271,7 @@ pub fn convert(
     sync_directory(&root.join("res"))?;
     sync_directory(&root.join("archive"))?;
     sync_directory(root)?;
-    drop(written);
+    drop(compiled);
     drop(plan);
     drop(document);
     // No circular 'writer said success' trust: read the disk bundle and source again.
