@@ -346,7 +346,7 @@ export class PreviewPanel {
     const n = this.view.results.length;
     return n === 1
       ? format(text.ui.previewOne, { word: this.view.results[0].headword })
-      : format(text.ui.previewMany, { n, word: this.view.query });
+      : format(text.ui.previewMany, { n, word: this.word(this.view) });
   }
 
   fail(error) {
@@ -356,7 +356,15 @@ export class PreviewPanel {
     this.statusLine.textContent = `${this.statusText()} ${errors[error.code] ?? errors.OTHER}`;
   }
 
-  async apply(promise) {
+  /**
+   * The word a view shows in the search box: what was typed, or for a
+   * followed link, which may look up an internal key, the headword found.
+   */
+  word(view) {
+    return view.followed ? (view.results[0]?.headword ?? view.query) : view.query;
+  }
+
+  async apply(promise, followed = false) {
     const id = ++this.latest;
     let outcome;
     try {
@@ -369,14 +377,14 @@ export class PreviewPanel {
     switch (outcome.outcome) {
       case 'view':
         if (this.view) this.history.push({ view: this.view, result: this.result, page: this.page });
-        this.view = outcome;
+        this.view = { ...outcome, followed };
         this.result = 0;
         this.page = 0;
         this.pages = 1;
         this.status = null;
-        this.input.value = outcome.query;
+        this.input.value = this.word(this.view);
         this.render();
-        await this.show(outcome.scroll_to);
+        await this.show(this.view.scroll_to);
         break;
       case 'scroll':
         this.frameView.scroll(outcome.id);
@@ -460,7 +468,7 @@ export class PreviewPanel {
     // Readers that draw one result at a time follow links from that result.
     const shown = this.view?.documents.length > 1 ? this.result : 0;
     const current = this.view?.results[shown]?.entry ?? 0;
-    return this.apply(this.request('follow', { app: this.app, href, current }));
+    return this.apply(this.request('follow', { app: this.app, href, current }), true);
   }
 
   async random() {
@@ -474,7 +482,7 @@ export class PreviewPanel {
     ({ view: this.view, result: this.result, page: this.page } = previous);
     this.pages = 1;
     this.status = null;
-    this.input.value = this.view.query;
+    this.input.value = this.word(this.view);
     this.render();
     this.show(this.view.scroll_to);
   }

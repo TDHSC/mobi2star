@@ -221,9 +221,15 @@ a {
   gap: 8px;
 }
 .preview-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 12px;
+}
+.preview-options > :first-child {
+  flex: 1 1 20rem;
+}
+.preview-options > :last-child {
+  flex: 0 0 12rem;
 }
 .preview-search input {
   flex: 1 1 12rem;
