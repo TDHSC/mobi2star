@@ -40,6 +40,8 @@ Every [release](https://github.com/TDHSC/mobi2star/releases) has an archive for 
 
 Download the archive for your platform, extract it, and put `mobi2star` on your `PATH`.
 
+Each release also has `mobi2star-vX.Y.Z-web.tar.gz`: that release's browser page, the `index.html` and `v/X.Y.Z/` files published at <https://tdhsc.github.io/mobi2star/>, which any static host can serve. Pages keeps only the two newest releases; the archive keeps every version.
+
 Each release also includes a `SHA256SUMS` file and a build-provenance attestation for every archive. To check an archive:
 
 ```sh

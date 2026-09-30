@@ -153,3 +153,5 @@ node tools/web-page-test.mjs
 The release workflow deploys the page, only after the GitHub release itself is published, so a failed release publishes no page. See [RELEASING.md](RELEASING.md).
 
 Each deployment replaces the whole site, so it also carries the previous release's `v/<version>/` files, listed in that release's `files.txt`. A page opened before the update, or served from the browser cache, can still start its worker. Only one earlier release is kept. If loading fails anyway, the page suggests reloading.
+
+Every GitHub release also attaches its page as `mobi2star-vX.Y.Z-web.tar.gz`, with `index.html` and `v/X.Y.Z/` exactly as deployed, before the previous release's files are added. It is covered by `SHA256SUMS` and the build-provenance attestation like the binaries. After Pages has dropped a version, the archive is where it stays available, for a page embedded or hosted elsewhere.

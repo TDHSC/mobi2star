@@ -1,11 +1,16 @@
 name: web
 # The browser page: WebAssembly lints, the site build, and its output
 # compared byte for byte with the CLI's `--profile stardict`. ci.yml calls
-# this on every push; release.yml calls it with `pages-artifact` and
-# deploys the result once the release is published.
+# this on every push; release.yml calls it with `release-archive`, and on a
+# tag with `pages-artifact`, and deploys the result once the release is
+# published.
 on:
   workflow_call:
     inputs:
+      release-archive:
+        description: Upload this release's page as the mobi2star-vX.Y.Z-web archive
+        type: boolean
+        default: false
       pages-artifact:
         description: Upload _site/ as the GitHub Pages artifact
         type: boolean
@@ -60,7 +65,27 @@ jobs:
       # The runner image has Chrome on the PATH.
       - name: Drive the page in headless Chrome
         run: node tools/web-page-test.mjs
-      # After the comparison, which expects one version in _site/v.
+      # This release's page alone, taken before the previous release's files
+      # are added. The release attaches it, so every version stays
+      # downloadable after Pages drops it; its name matches the pattern the
+      # publish job collects, checksums and attests.
+      - name: Package this release's page
+        if: inputs.release-archive
+        run: |
+          set -- _site/v/*
+          [ $# -eq 1 ] || { echo "::error::Expected one version in _site/v, found: $*"; exit 1; }
+          archive="mobi2star-v${1##*/}-web"
+          mkdir -p "$RUNNER_TEMP/web"
+          cp -R _site "$RUNNER_TEMP/web/$archive"
+          tar -C "$RUNNER_TEMP/web" -czf "$RUNNER_TEMP/$archive.tar.gz" "$archive"
+          echo "WEB_ARCHIVE=$archive" >> "$GITHUB_ENV"
+      - if: inputs.release-archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.WEB_ARCHIVE }}
+          path: ${{ runner.temp }}/${{ env.WEB_ARCHIVE }}.tar.gz
+          if-no-files-found: error
+      # After the comparison and the archive, which expect one version in _site/v.
       - name: Keep the published release's files for pages already open
         if: inputs.pages-artifact && inputs.published-site != ''
         env:
