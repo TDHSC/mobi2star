@@ -56,10 +56,19 @@ pub struct SourceBuffer {
     size: usize,
 }
 impl SourceBuffer {
-    /// Reserves room for a file of `size` bytes, refusing files over the
-    /// browser limit and sizes memory cannot hold.
+    /// Reserves room for a MOBI file of `size` bytes, refusing files over
+    /// the browser's input limit and sizes memory cannot hold.
     pub fn new(size: usize) -> Result<Self, Failure> {
-        let limit = Limits::browser().input_bytes;
+        Self::with_limit(size, Limits::browser().input_bytes)
+    }
+    /// Reserves room for a converted dictionary's zip, which may be as large
+    /// as the browser's output limit.
+    pub fn for_archive(size: usize) -> Result<Self, Failure> {
+        let limit = usize::try_from(Limits::browser().output_bytes).unwrap_or(usize::MAX);
+        Self::with_limit(size, limit)
+    }
+    /// Reserves room for `size` bytes, refusing more than `limit`.
+    pub fn with_limit(size: usize, limit: usize) -> Result<Self, Failure> {
         if size > limit {
             return Err(Failure {
                 code: "LIMIT",
@@ -201,6 +210,9 @@ mod tests {
         assert_eq!(short.finish().unwrap_err().code, "IO");
         let limit = Limits::browser().input_bytes;
         assert_eq!(SourceBuffer::new(limit + 1).unwrap_err().code, "LIMIT");
+        // A converted zip may exceed the input limit, up to the output limit.
+        assert!(SourceBuffer::for_archive(limit + 1).is_ok());
+        assert_eq!(SourceBuffer::with_limit(3, 2).unwrap_err().code, "LIMIT");
     }
     #[test]
     fn choices_list_every_value() {

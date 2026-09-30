@@ -46,6 +46,14 @@ impl Source {
     pub fn new(size: usize) -> Result<Source, JsError> {
         crate::SourceBuffer::new(size).map(Source).map_err(thrown)
     }
+    /// Reserves room for a converted dictionary's zip of `size` bytes, which
+    /// may be as large as the browser's output limit.
+    #[wasm_bindgen(js_name = forArchive)]
+    pub fn for_archive(size: usize) -> Result<Source, JsError> {
+        crate::SourceBuffer::for_archive(size)
+            .map(Source)
+            .map_err(thrown)
+    }
     /// Appends the next chunk of the file.
     pub fn push(&mut self, chunk: &[u8]) -> Result<(), JsError> {
         self.0.push(chunk).map_err(thrown)
