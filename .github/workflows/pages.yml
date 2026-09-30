@@ -1,0 +1,54 @@
+name: pages
+# A pushed v* tag builds the browser page and publishes it to GitHub Pages.
+# It listens to the tag push itself: a release that release.yml creates with
+# the Actions token triggers no workflows. A manual run must use a tag ref,
+# because the github-pages environment accepts only v* tags.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  # Deployments queue; one is never cancelled halfway.
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust with the WebAssembly target
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+          rustup default stable
+      - name: Require the tag to match the crate version
+        run: |
+          version=$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[] | select(.name == "mobi2star") | .version')
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Ref $GITHUB_REF_NAME is not the tag v$version"
+            exit 1
+          fi
+      - name: Install the wasm-bindgen-cli version in Cargo.lock
+        run: cargo install wasm-bindgen-cli --locked --version "$(tools/build-web.sh --bindgen-version)"
+      - name: Build the site
+        run: ./tools/build-web.sh
+      - name: Compare the WebAssembly output with the CLI
+        run: |
+          cargo build -p mobi2star --release --locked
+          node tools/web-smoke.mjs target/release/mobi2star
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

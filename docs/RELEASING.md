@@ -39,6 +39,24 @@ Finally, the `publish` job:
 2. Records a build-provenance attestation for every archive.
 3. Creates the release. A version with a pre-release suffix, such as `-alpha.1`, is marked as a pre-release.
 
+## Browser page
+
+The same tag push runs `.github/workflows/pages.yml`, which publishes the browser page to <https://tdhsc.github.io/mobi2star/>. It:
+
+1. Fails unless the tag is exactly `v` followed by the crate version.
+2. Builds the site (`tools/build-web.sh`) and runs the WebAssembly smoke test against the CLI.
+3. Deploys `_site/` to the `github-pages` environment.
+
+To redeploy a release, run it on that tag:
+
+```sh
+gh workflow run pages.yml --ref vX.Y.Z
+```
+
+The repository needs a one-time setup before the first deployment:
+- enable Pages with GitHub Actions as the source (`gh api -X POST repos/TDHSC/mobi2star/pages -f build_type=workflow`);
+- allow `v*` tags to deploy to the `github-pages` environment, whose default rule admits only the default branch.
+
 ## Dry run
 
 Start the workflow manually to build and smoke-test every archive without publishing anything:
