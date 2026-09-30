@@ -1,5 +1,6 @@
 //! Attribute-level rewrites with byte provenance, never DOM reserialization.
 #![forbid(unsafe_code)]
+pub mod css;
 pub mod tokenizer;
 use lexicon_core::{
     Document, Encoding, Entry, Error, Limits, Result, Span, StyleDelivery, LINK_TAG,

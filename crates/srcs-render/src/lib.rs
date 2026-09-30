@@ -132,7 +132,7 @@ impl Plan {
                 "source".into()
             },
             namespace: namespace.into(),
-            scope: format!("m2s_{}", &namespace[..16]),
+            scope: html_preserve::css::scope_class(namespace),
             page_ids: book
                 .pages
                 .keys()
