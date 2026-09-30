@@ -15,6 +15,9 @@ pub enum LabelLanguage {
     /// Chinese (Simplified)
     Zh,
 }
+impl LabelLanguage {
+    pub const ALL: &'static [Self] = &[Self::En, Self::Zh];
+}
 
 /// Fixed generated strings for one language.
 #[derive(Debug)]

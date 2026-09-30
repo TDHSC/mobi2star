@@ -58,6 +58,7 @@ mod tests {
             let cli = reader.to_possible_value().unwrap();
             assert_eq!(serde_json::to_value(reader).unwrap(), cli.get_name());
         }
+        assert_eq!(LabelLanguage::value_variants(), LabelLanguage::ALL);
         for labels in LabelLanguage::value_variants() {
             let cli = labels.to_possible_value().unwrap();
             assert_eq!(serde_json::to_value(labels).unwrap(), cli.get_name());

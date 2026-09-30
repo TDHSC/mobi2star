@@ -1,4 +1,5 @@
 /target/
+/_site/
 /out/
 *.tmp
 .DS_Store

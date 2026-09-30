@@ -24,6 +24,28 @@ jobs:
         with:
           name: mobi2star-${{ runner.os }}-${{ runner.arch }}
           path: target/release/mobi2star
+  web:
+    # The browser build: WebAssembly lints, the site, and its output compared
+    # byte for byte with the CLI's `--profile stardict`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust with the WebAssembly target
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown
+          rustup default stable
+      - name: Install the wasm-bindgen-cli version in Cargo.lock
+        run: cargo install wasm-bindgen-cli --locked --version "$(tools/build-web.sh --bindgen-version)"
+      - name: Lint the browser crate for WebAssembly
+        run: cargo clippy -p mobi2star-web --target wasm32-unknown-unknown --all-targets --locked -- -D warnings
+      - name: Build the site
+        run: ./tools/build-web.sh
+      - name: Build the CLI to compare against
+        run: cargo build -p mobi2star --release --locked
+      - name: Compare the WebAssembly output with the CLI
+        run: |
+          node --version
+          node tools/web-smoke.mjs target/release/mobi2star
   msrv:
     # Keep in sync with rust-version in Cargo.toml.
     runs-on: ubuntu-latest

@@ -13,6 +13,7 @@ pub(crate) struct Transaction {
 }
 impl Transaction {
     pub fn begin(root: &Path) -> Result<Self> {
+        #[cfg_attr(not(unix), allow(unused_mut))]
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
         {

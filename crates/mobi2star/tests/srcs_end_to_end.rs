@@ -8,6 +8,22 @@ use lexicon_core::{sha256, LabelLanguage, Limits, TargetReader, LINK_TAG};
 use mobi2star::OutputOptions;
 use mobi_reader::Container;
 use std::{fs, path::Path};
+
+/// tests/fixtures/srcs.mobi is this suite's synthetic SRCS book, committed
+/// for tests outside Rust (the browser build's smoke test). Set
+/// MOBI2STAR_BLESS=1 to rewrite it after changing the generator.
+#[test]
+fn committed_srcs_fixture_is_the_generated_book() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/srcs.mobi");
+    let generated = fixture(PAGE);
+    if std::env::var_os("MOBI2STAR_BLESS").is_some() {
+        fs::write(&path, &generated).unwrap();
+    }
+    assert!(
+        fs::read(&path).unwrap() == generated,
+        "tests/fixtures/srcs.mobi is stale; rerun with MOBI2STAR_BLESS=1"
+    );
+}
 #[test]
 fn rust_srcs_conversion_reopens_all_content() {
     let dir = tempfile::tempdir().unwrap();
