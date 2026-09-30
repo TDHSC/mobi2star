@@ -35,7 +35,8 @@ fn native_round_trip_all_compressions_and_inflection_formats() {
         assert_eq!(report.source_aliases, 1);
         assert_eq!(report.supplement_entries, 2);
         assert_eq!(report.output_entries, 5);
-        assert_eq!(report.output_synonyms, 6);
+        // One source alias, five entry routes and the two links' exact keys.
+        assert_eq!(report.output_synonyms, 1 + 5 + 2);
         assert_eq!(report.resolved_internal_links, 2);
         assert_eq!(report.resolved_resource_references, 1);
         assert_eq!(report.skipped_entries, 0);
@@ -318,5 +319,45 @@ fn deterministic_mutation_smoke_test_does_not_panic() {
         let pos = (n * 7919 + 17) % bytes.len();
         bytes[pos] ^= (n as u8).wrapping_add(1);
         let _ = mobi_reader::read(bytes, &limits, LabelLanguage::En);
+    }
+}
+/// KOReader looks up everything after `bword://`, `#fragment` included, and
+/// shows the result from its top. Every internal link must therefore be a
+/// lookup key of its own, landing on the entry that holds the anchor.
+#[test]
+fn every_internal_link_is_a_lookup_key_of_its_target() {
+    let limits = Limits::default();
+    for bytes in [PLAIN, PALM, HUFF, OLD] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = input(dir.path(), bytes);
+        let (bundle, _) = mobi2star::convert(
+            &source,
+            &dir.path().join("output"),
+            &limits,
+            OutputOptions::default(),
+        )
+        .unwrap();
+        let parsed = stardict_io::open(&bundle, &limits).unwrap();
+        let dict = fs::read(stardict_io::dictionary_file(&bundle).unwrap()).unwrap();
+        let payload = |n: usize| {
+            let entry = &parsed.entries[n];
+            String::from_utf8(dict[entry.offset as usize..][..entry.size as usize].to_vec())
+                .unwrap()
+        };
+        let mut links = 0;
+        for n in 0..parsed.entries.len() {
+            for href in payload(n).split("href=\"bword://").skip(1) {
+                let key = &href[..href.find('"').unwrap()];
+                let anchor = key.split_once('#').unwrap().1;
+                let targets = parsed.lookup(key);
+                assert_eq!(targets.len(), 1, "{key}");
+                assert!(
+                    payload(targets[0]).contains(&format!("id=\"{anchor}\"")),
+                    "{key}"
+                );
+                links += 1;
+            }
+        }
+        assert!(links > 0, "the fixture has internal links");
     }
 }

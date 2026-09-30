@@ -49,6 +49,20 @@ pub struct Plan {
     /// scoped under `scope`. Empty when the book has no CSS.
     pub stylesheet: String,
 }
+impl Plan {
+    /// Each distinct internal link as the key a reader looks up and the entry
+    /// it points into. KOReader looks up everything after `bword://`,
+    /// `#fragment` included, so every one needs its own alias.
+    pub fn link_aliases(&self) -> BTreeSet<(&str, u64)> {
+        self.links
+            .iter()
+            .filter_map(|link| {
+                let key = link.href.strip_prefix("bword://")?;
+                Some((key, link.target_entry))
+            })
+            .collect()
+    }
+}
 #[derive(Clone)]
 enum Target {
     Position(usize),

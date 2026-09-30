@@ -184,6 +184,9 @@ fn write_dictionary(
             rendered_sha256: sha256(html.as_bytes()),
         });
     }
+    for (key, id) in plan.link_aliases() {
+        builder.alias(key.into(), id);
+    }
     let written = builder.finish(title(document), limits)?;
     for row in &mut rows {
         row.ordinal = written.encoded.catalog.ordinals[&row.entry.id];
@@ -200,7 +203,7 @@ pub(crate) fn report(
     let mut report = Report { schema: SCHEMA, implemented_content_checks_passed: true, rendering_status: "unverified_reader_dependent".into(),
         source_headwords: doc.source_headwords, source_aliases: doc.source_aliases,
         supplement_entries: doc.entries.iter().filter(|e| e.kind == EntryKind::Supplement).count(),
-        output_entries: doc.entries.len(), output_synonyms: doc.source_aliases + doc.entries.len(),
+        output_entries: doc.entries.len(), output_synonyms: doc.source_aliases + doc.entries.len() + plan.link_aliases().len(),
         source_rawml_bytes: doc.rawml.len(), covered_rawml_bytes: doc.rawml.len(), copied_resources: doc.resources.len(),
         resolved_resource_references: plan.resource_links.len(), resolved_internal_links: plan.links.len(),
         external_links_retained: plan.external_links, skipped_entries: 0, offset_bits, reader, profile,

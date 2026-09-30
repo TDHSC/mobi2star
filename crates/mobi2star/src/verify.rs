@@ -110,6 +110,15 @@ pub(crate) fn check_entries(
             target: ordinals[&entry.id],
         });
     }
+    for (key, id) in plan.link_aliases() {
+        let target = *ordinals
+            .get(&id)
+            .ok_or_else(|| Error::Verify("internal link targets no entry".into()))?;
+        expected_synonyms.push(Synonym {
+            word: key.into(),
+            target,
+        });
+    }
     expected_synonyms.sort_by(compare_synonyms);
     ensure(
         expected_synonyms == parsed.synonyms,

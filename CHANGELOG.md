@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: internal links in compiled-backend dictionaries were "not found" in KOReader, which looks up everything after `bword://` including the `#anchor`. Each link's exact key is now an alias of the entry it points into, as publisher-source dictionaries already had. Reconvert compiled-backend dictionaries; publisher-source output (such as Collins COBUILD) is unchanged.
+
 ## 0.5.0-alpha.1 — Convert in the browser
 
 - New: convert in your browser at <https://tdhsc.github.io/mobi2star/>. The page runs the same Rust converter as WebAssembly, so the file is never uploaded, and offers a zip holding the StarDict folder. It has English and Chinese text, accepts files up to 256 MiB, and is republished with every release. See docs/WEB.md.

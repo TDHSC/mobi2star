@@ -31,27 +31,27 @@ fn digest(source: &[u8], options: OutputOptions) -> String {
 const EXPECTED: &[(&str, &str)] = &[
     (
         "compiled/uncompressed",
-        "c2499739374960dab9ad2a514a15f0bb4a990f6e826eeb4b92171ffd3d0fe1f7",
+        "71c2c3416ddda77bad0f7b9241440a5a17ad39983cef9e535af3e60b812ef15b",
     ),
     (
         "compiled/palmdoc",
-        "9cc174d276bb9742273242a7db55c870d0495a531f4ed4cc5ee279d5ec86ced8",
+        "4022284fde036139d9b96305dcc5f8d4c6adc0963a7ed515febc084e1c72b6d7",
     ),
     (
         "compiled/huff",
-        "44e88796e7dbee5dd326bda1be466210bd6302c5c71853b7082105572c1e8ad9",
+        "3f57537ecb39fe78893d1c6bf92f742e248bb13c7354541e7fd1c46d7e182e9e",
     ),
     (
         "compiled/old-inflections",
-        "0e768457e1bdacb2a24a51c14dfb86c91d67cf3019e7c153472eeaa58983dda9",
+        "ee564a50d47e7cbeefefa5c844d64f149ca828a0ac3673edbfc1fd5718096e88",
     ),
     (
         "compiled/huff/readest",
-        "0619b63aedef837700afa1acbf357dda470838bb67fefcc51edb7acd925cbf03",
+        "1fbdb8e4ced5c0aaba0c064171d3262044a22ab0d3fca58591b4746ec2a477a9",
     ),
     (
         "compiled/huff/universal-zh-64",
-        "f387acbbf21e5d8f2179acc02c9b2496e6fe96239be22a29974782d648717b30",
+        "d9bdd8368f1c69da64ab1397ab6298791c4d403ed8d88a4aee8acf29438fcc46",
     ),
     (
         "srcs/default",
