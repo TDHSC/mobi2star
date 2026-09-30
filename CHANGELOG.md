@@ -4,6 +4,7 @@
 
 - The compiled backend now scopes its stylesheet under a per-book wrapper class, as the SRCS backend already did. `body`/`html` rules style the entry, not the whole KOReader popup, and inline copies no longer leak into other dictionaries. Scoping is shared (`html_preserve::css`), with an open grammar for compiled books that accepts any selector and applies CSS's own error recovery.
 - Fixed: text left over at the end of one compiled `<style>` body could join the first selector of the next body in `dictionary.css`.
+- Fixed: a compiled `<style>` with an `id`, `class`, `lang`, `dir` or `nonce`, or an empty `type` or `media`, stopped the conversion. Those attributes don't change what the CSS does; `title`, `disabled` and non-screen media still do and remain errors.
 
 ## 0.4.0-alpha.1 — Reader-targeted stylesheets
 

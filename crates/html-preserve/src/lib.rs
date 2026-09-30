@@ -130,25 +130,39 @@ fn check_css(text: &str) -> Result<()> {
     }
     Ok(())
 }
-/// Only attributes whose meaning survives moving the body into a shared
-/// stylesheet file: a CSS `type`, and a `media` that applies on screen.
+/// The body of a `<style>` moves into the shared stylesheet, so only
+/// attributes whose meaning survives that move are accepted:
+/// - ones that merely identify or annotate the element (id, class, lang, dir,
+///   nonce);
+/// - a CSS `type`, empty or `text/css`;
+/// - a `media` that applies on screen, empty or `all` or `screen`.
+///
+/// Anything else, such as `title` (alternate stylesheets), `disabled` or print
+/// media, would change what the body does, so it is an error.
 fn check_style_element(tag: &Tag, raw: &[u8], encoding: Encoding) -> Result<()> {
     for attr in &tag.attrs {
-        let value = attr_value(attr, raw, encoding)?.trim().to_ascii_lowercase();
-        let supported = match attr.name.as_str() {
-            "type" => value == "text/css",
-            "media" => value == "all" || value == "screen",
+        let name = attr.name.as_str();
+        if matches!(name, "id" | "class" | "lang" | "xml:lang" | "dir" | "nonce") {
+            continue;
+        }
+        let value = match attr.value {
+            Some(_) => attr_value(attr, raw, encoding)?.trim().to_ascii_lowercase(),
+            None => String::new(),
+        };
+        let supported = match name {
+            "type" => value.is_empty() || value == "text/css",
+            "media" => matches!(value.as_str(), "" | "all" | "screen"),
             _ => false,
         };
         if !supported {
             return Err(Error::Unsupported(format!(
-                "<style {}=\"{value}\"> needs a stylesheet adapter",
-                attr.name
+                "<style {name}=\"{value}\"> needs a stylesheet adapter"
             )));
         }
     }
     Ok(())
 }
+
 pub fn build(doc: &Document, limits: &Limits) -> Result<Plan> {
     let raw = &doc.rawml;
     let mut plan = Plan::default();
@@ -599,10 +613,20 @@ mod tests {
         );
     }
     #[test]
+    fn meaning_neutral_style_attributes_are_accepted() {
+        let (_, plan) = plan_for(
+            "<style id=\"main\" class=\"c\" lang=\"en\" dir=\"ltr\" type=\"\" media=\"\">.a{b:c}</style>",
+        )
+        .unwrap();
+        assert_eq!(plan.stylesheet, format!(".{} .a{{b:c}}\n", plan.scope));
+    }
+    #[test]
     fn styles_that_cannot_join_a_stylesheet_fail_closed() {
         for styles in [
             "<style media=\"print\">.a{}</style>",
             "<style title=\"alt\">.a{}</style>",
+            "<style disabled=\"\">.a{}</style>",
+            "<style type=\"text/less\">.a{}</style>",
             "<style>.a{}}</style>",
             "<style>.a{content:\"x}</style>",
             "<style>@layer base{p{}}</style>",
