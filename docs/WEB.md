@@ -106,7 +106,7 @@ Collins COBUILD Advanced Learner's Dictionary is a 31 MB MOBI with 34,755 payloa
 
 The preview of the same dictionary, measured in Node 26 on the same Mac:
 - Opening its 24 MiB zip takes 0.3 s and holds 190 MiB of WebAssembly memory, mostly the 146 MB of definitions; MuPDF and its fonts add their own.
-- A lookup takes under 2 ms, apart from GoldenDict-ng's first, which builds its folded index in 0.1 s.
+- A lookup takes under 2 ms, apart from the first in GoldenDict-ng (0.1 s) and Readest (0.06 s), which build their lookup indexes.
 - A KOReader page lays out and draws in 2 ms (14 ms at most over 200 entries).
 - Over the network, the first KOReader page loads MuPDF (10 MB) and Noto Sans (1.4 MB); the fallback fonts follow only when a page needs them.
 
