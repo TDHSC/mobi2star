@@ -12,8 +12,12 @@ impl Dictionary {
     /// Reads the one StarDict dictionary in `zip`: its `.ifo`, `.idx`,
     /// `.syn`, `.dict`, the `.css` next to the `.ifo`, and `res/`. Sizes
     /// are checked against `limits` before anything is inflated, and the
-    /// zip itself is released once its members are read.
+    /// zip itself is released once its members are read. The zip and its
+    /// unpacked files are in memory together until then, so the two
+    /// together must fit `limits.output_bytes`, the same budget a
+    /// conversion in the browser has for its output.
     pub fn from_zip(zip: Vec<u8>, limits: &Limits) -> Result<Self> {
+        let zip_bytes = zip.len() as u64;
         let mut archive = ZipArchive::new(Cursor::new(zip)).map_err(malformed)?;
         let names: Vec<String> = archive.file_names().map(str::to_owned).collect();
         let ifo = {
@@ -38,9 +42,10 @@ impl Dictionary {
             let file = archive.by_index_raw(index).map_err(malformed)?;
             total = total.saturating_add(file.size());
         }
-        if total > limits.output_bytes {
+        let needed = total.saturating_add(zip_bytes);
+        if needed > limits.output_bytes {
             return Err(Error::Limit(format!(
-                "the dictionary unpacks to {total} bytes; the limit is {}",
+                "the dictionary unpacks to {total} bytes, {needed} with its zip; the limit is {}",
                 limits.output_bytes
             )));
         }
@@ -128,6 +133,22 @@ mod tests {
         assert!(matches!(
             Dictionary::from_zip(b"not a zip".to_vec(), &Limits::browser()),
             Err(Error::Malformed(_))
+        ));
+        // The zip counts too: it is held while its members are inflated.
+        let zip = converted();
+        let mut archive = ZipArchive::new(Cursor::new(zip.clone())).unwrap();
+        let unpacked: u64 = (0..archive.len())
+            .map(|n| archive.by_index_raw(n).unwrap().size())
+            .sum();
+        let budget = |output_bytes| Limits {
+            output_bytes,
+            ..Limits::browser()
+        };
+        let needed = unpacked + zip.len() as u64;
+        assert!(Dictionary::from_zip(zip.clone(), &budget(needed)).is_ok());
+        assert!(matches!(
+            Dictionary::from_zip(zip, &budget(needed - 1)),
+            Err(Error::Limit(_))
         ));
     }
 }

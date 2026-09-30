@@ -94,7 +94,7 @@ The page links the preview into its WebAssembly and bundles MuPDF, which is AGPL
 
 ## Limits and measurements
 
-`Limits::browser()` caps the input at 256 MiB and the output at 1.5 GiB, because WebAssembly memory is at most 4 GiB and holds the source, the parsed book and the archive at once. `Source` refuses a larger file, or one memory cannot hold, before reading any of it.
+`Limits::browser()` caps the input at 256 MiB and the output at 1.5 GiB, because WebAssembly memory is at most 4 GiB and holds the source, the parsed book and the archive at once. `Source` refuses a larger file, or one memory cannot hold, before reading any of it. The preview holds a converted zip and its unpacked files together while it opens them, so it refuses a dictionary whose zip and unpacked files exceed the same 1.5 GiB, before inflating anything.
 
 Collins COBUILD Advanced Learner's Dictionary is a 31 MB MOBI with 34,755 payloads. Measured on an Apple Silicon Mac:
 
