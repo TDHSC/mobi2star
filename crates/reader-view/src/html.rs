@@ -91,6 +91,25 @@ pub fn inline_images<'a>(html: &str, resolve: impl Fn(&str) -> Option<&'a [u8]>)
     splice(html, edits)
 }
 
+/// The length of the character reference `text` starts with, `&` and `;`
+/// included: `&name;`, `&#123;` or `&#x1F;`. A bare `&` starts none.
+fn reference_len(text: &str) -> Option<usize> {
+    let body = text.strip_prefix('&')?;
+    let end = body.find(';').filter(|&n| n <= 32)?;
+    let name = &body[..end];
+    let valid = match name.strip_prefix('#') {
+        Some(hex) if hex.starts_with(['x', 'X']) => {
+            hex.len() > 1 && hex[1..].bytes().all(|b| b.is_ascii_hexdigit())
+        }
+        Some(digits) => !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()),
+        None => {
+            name.starts_with(|c: char| c.is_ascii_alphabetic())
+                && name.bytes().all(|b| b.is_ascii_alphanumeric())
+        }
+    };
+    valid.then_some(end + 2)
+}
+
 /// Puts each run of text characters that `pick` chooses between `before`
 /// and `after`. Character references count as the character they stand
 /// for; tags, comments and the contents of `<style>`, `<script>`,
@@ -123,10 +142,7 @@ pub fn wrap_characters(
         let mut rest = text;
         while let Some(first) = rest.chars().next() {
             // A character, or the reference that stands for one.
-            let unit = rest
-                .strip_prefix('&')
-                .and_then(|r| r.find(';').filter(|&n| n <= 32))
-                .map_or(first.len_utf8(), |n| n + 2);
+            let unit = reference_len(rest).unwrap_or(first.len_utf8());
             let (raw, tail) = rest.split_at(unit);
             let ch = if unit > first.len_utf8() {
                 html_preserve::decode_entities(raw)
@@ -197,6 +213,16 @@ mod tests {
              <!-- \u{25b8} --><style>p::before{content:'\u{25b8}'}</style>"
         );
         assert_eq!(wrap_characters("a&b;c", |c| c == 'x', "[", "]"), "a&b;c");
+        // A bare ampersand is a character, not the start of a reference.
+        assert_eq!(
+            wrap_characters(
+                "Tom & Jerry \u{25b8} run; &#x25B8;",
+                |c| c == '\u{25b8}',
+                "[",
+                "]"
+            ),
+            "Tom & Jerry [\u{25b8}] run; [&#x25B8;]"
+        );
         assert_eq!(
             wrap_characters("<p", |_| true, "[", "]"),
             "<p",
