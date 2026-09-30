@@ -455,7 +455,7 @@ fn build(
     if disk.entries != catalog.index || disk.synonyms != catalog.synonyms {
         return Err(Error::Verify("catalog differs after disk readback".into()));
     }
-    let mut dictfile = File::open(&disk.dictionary_path)?;
+    let mut dictfile = File::open(stardict_io::dictionary_file(&dictroot)?)?;
     for article in &articles {
         let at = stardict_io::IndexEntry {
             word: String::new(),

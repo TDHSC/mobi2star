@@ -213,7 +213,7 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
         "missing, changed, duplicated or misrouted synonym/inflection",
     )?;
     let mut provenance = BufReader::new(File::open(checked_member(root, "entries.jsonl")?)?);
-    let mut payload_file = File::open(&parsed.dictionary_path)?;
+    let mut payload_file = File::open(stardict_io::dictionary_file(root)?)?;
     for (ordinal, (expected, actual)) in ordered.iter().zip(&parsed.entries).enumerate() {
         let line = next_line(&mut provenance, limits.input_bytes)?
             .ok_or_else(|| Error::Verify("missing entry provenance".into()))?;

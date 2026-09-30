@@ -5,9 +5,12 @@ mod catalog;
 mod reader;
 mod style;
 mod writer;
-pub use catalog::{write_catalog, Catalog, CatalogAlias, CatalogItem, Payload, PayloadWriter};
+pub use catalog::{
+    encode_catalog, write_catalog, Catalog, CatalogAlias, CatalogItem, EncodedCatalog, Payload,
+    PayloadWriter,
+};
 use lexicon_core::{Error, Result};
-pub use reader::{open, read_payload, ParsedDictionary};
+pub use reader::{check_payloads, dictionary_file, open, parse, read_payload, ParsedDictionary};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 pub use style::{stylesheet_files, stylesheet_paths};

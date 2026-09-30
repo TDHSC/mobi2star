@@ -143,9 +143,10 @@ fn run(cli: &Cli) -> Result<()> {
             }
         }
         Command::Lookup { bundle, word } => {
-            let parsed = stardict_io::open(&mobi2star::dictionary_root(bundle), &limits)?;
+            let dictionary_root = mobi2star::dictionary_root(bundle);
+            let parsed = stardict_io::open(&dictionary_root, &limits)?;
             let targets = parsed.lookup(word);
-            let mut file = std::fs::File::open(&parsed.dictionary_path)?;
+            let mut file = std::fs::File::open(stardict_io::dictionary_file(&dictionary_root)?)?;
             let mut matches = Vec::new();
             for ordinal in targets {
                 let entry = &parsed.entries[ordinal];

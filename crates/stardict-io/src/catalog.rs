@@ -30,8 +30,10 @@ pub struct Catalog {
     pub synonyms: Vec<Synonym>,
     pub ordinals: BTreeMap<u64, u32>,
 }
-pub struct PayloadWriter {
-    writer: BufWriter<File>,
+/// Streams HTML payloads into a `.dict` byte stream: a file on disk by
+/// default, or any other writer (for example a zip entry).
+pub struct PayloadWriter<W: Write = BufWriter<File>> {
+    writer: W,
     bytes: u64,
     limit: u64,
     entry_limit: usize,
@@ -47,15 +49,38 @@ fn finish(mut writer: BufWriter<File>) -> Result<()> {
     writer.get_ref().sync_all()?;
     Ok(())
 }
+fn write_file(root: &Path, name: &str, bytes: &[u8]) -> Result<()> {
+    let mut file = create(&root.join(name))?;
+    file.write_all(bytes)?;
+    finish(file)
+}
+fn check_offset_bits(bits: u8) -> Result<()> {
+    if matches!(bits, 32 | 64) {
+        Ok(())
+    } else {
+        Err(Error::Unsupported(
+            "StarDict offsets must be 32 or 64 bit".into(),
+        ))
+    }
+}
 impl PayloadWriter {
+    /// Creates `dictionary.dict` in `root`, which must not exist yet.
     pub fn new(root: &Path, limits: &Limits, bits: u8) -> Result<Self> {
-        if !matches!(bits, 32 | 64) {
-            return Err(Error::Unsupported(
-                "StarDict offsets must be 32 or 64 bit".into(),
-            ));
-        }
+        check_offset_bits(bits)?;
+        Self::with_writer(create(&root.join("dictionary.dict"))?, limits, bits)
+    }
+    /// Flushes and syncs the file; returns the `.dict` length.
+    pub fn finish(self) -> Result<u64> {
+        let bytes = self.bytes;
+        finish(self.writer)?;
+        Ok(bytes)
+    }
+}
+impl<W: Write> PayloadWriter<W> {
+    pub fn with_writer(writer: W, limits: &Limits, bits: u8) -> Result<Self> {
+        check_offset_bits(bits)?;
         Ok(Self {
-            writer: create(&root.join("dictionary.dict"))?,
+            writer,
             bytes: 0,
             limit: limits.output_bytes,
             entry_limit: limits.entry_bytes,
@@ -88,25 +113,34 @@ impl PayloadWriter {
         self.bytes = end;
         Ok(payload)
     }
-    pub fn finish(self) -> Result<u64> {
-        finish(self.writer)?;
-        Ok(self.bytes)
+    /// Flushes the writer and returns it with the `.dict` length.
+    pub fn into_inner(mut self) -> Result<(W, u64)> {
+        self.writer.flush()?;
+        Ok((self.writer, self.bytes))
     }
 }
-pub fn write_catalog(
-    root: &Path,
+/// The three index files of a dictionary, encoded in memory.
+pub struct EncodedCatalog {
+    pub idx: Vec<u8>,
+    pub syn: Vec<u8>,
+    pub ifo: Vec<u8>,
+    pub catalog: Catalog,
+}
+/// Encodes `.idx`, `.syn` and `.ifo` for payloads already written.
+/// Exact shared payload ranges are valid; partial overlaps and gaps are errors.
+pub fn encode_catalog(
     title: &str,
     items: &[CatalogItem],
     aliases: &[CatalogAlias],
     bytes: u64,
     bits: u8,
     limits: &Limits,
-) -> Result<Catalog> {
+) -> Result<EncodedCatalog> {
     if !matches!(bits, 32 | 64) {
         return Err(Error::Unsupported("StarDict offset width".into()));
     }
     if items.len() > limits.entries
-        || items.len() > u32::MAX as usize
+        || u32::try_from(items.len()).is_err()
         || aliases.len() > limits.aliases
     {
         return Err(Error::Limit("StarDict catalog count".into()));
@@ -126,7 +160,6 @@ pub fn write_catalog(
     if ordinals.len() != items.len() {
         return Err(Error::Incomplete("catalog IDs must be unique".into()));
     }
-    // Exact shared article ranges are valid. Partial overlaps and gaps are errors.
     let mut ranges: Vec<Payload> = items.iter().map(|x| x.payload).collect();
     ranges.sort();
     ranges.dedup();
@@ -144,29 +177,26 @@ pub fn write_catalog(
     if end != bytes {
         return Err(Error::Incomplete("unindexed payload bytes".into()));
     }
-    let mut idx = create(&root.join("dictionary.idx"))?;
+    let mut idx = Vec::new();
     let mut index = Vec::new();
-    let mut idx_bytes = 0u64;
     for item in ordered {
         validate_key(&item.word)?;
-        idx.write_all(item.word.as_bytes())?;
-        idx.write_all(&[0])?;
+        idx.extend_from_slice(item.word.as_bytes());
+        idx.push(0);
         if bits == 64 {
-            idx.write_all(&item.payload.offset.to_be_bytes())?;
+            idx.extend_from_slice(&item.payload.offset.to_be_bytes());
         } else {
             let offset = u32::try_from(item.payload.offset)
                 .map_err(|_| Error::Limit("32-bit index offset".into()))?;
-            idx.write_all(&offset.to_be_bytes())?;
+            idx.extend_from_slice(&offset.to_be_bytes());
         }
-        idx.write_all(&item.payload.size.to_be_bytes())?;
-        idx_bytes += item.word.len() as u64 + 1 + u64::from(bits / 8) + 4;
+        idx.extend_from_slice(&item.payload.size.to_be_bytes());
         index.push(IndexEntry {
             word: item.word.clone(),
             offset: item.payload.offset,
             size: item.payload.size,
         });
     }
-    finish(idx)?;
     let mut synonyms = Vec::new();
     for alias in aliases {
         validate_key(&alias.word)?;
@@ -179,21 +209,45 @@ pub fn write_catalog(
         });
     }
     synonyms.sort_by(compare_synonyms);
-    let mut syn = create(&root.join("dictionary.syn"))?;
+    let mut syn = Vec::new();
     for s in &synonyms {
-        syn.write_all(s.word.as_bytes())?;
-        syn.write_all(&[0])?;
-        syn.write_all(&s.target.to_be_bytes())?;
+        syn.extend_from_slice(s.word.as_bytes());
+        syn.push(0);
+        syn.extend_from_slice(&s.target.to_be_bytes());
     }
-    finish(syn)?;
-    let mut ifo = create(&root.join("dictionary.ifo"))?;
-    writeln!(ifo,"StarDict's dict ifo file\nversion=3.0.0\nbookname={title}\nwordcount={}\nsynwordcount={}\nidxfilesize={idx_bytes}\nidxoffsetbits={bits}\nsametypesequence=h",items.len(),synonyms.len())?;
-    finish(ifo)?;
-    Ok(Catalog {
-        index,
-        synonyms,
-        ordinals,
+    let ifo = format!(
+        "StarDict's dict ifo file\nversion=3.0.0\nbookname={title}\nwordcount={}\nsynwordcount={}\nidxfilesize={}\nidxoffsetbits={bits}\nsametypesequence=h\n",
+        items.len(),
+        synonyms.len(),
+        idx.len()
+    )
+    .into_bytes();
+    Ok(EncodedCatalog {
+        idx,
+        syn,
+        ifo,
+        catalog: Catalog {
+            index,
+            synonyms,
+            ordinals,
+        },
     })
+}
+/// Encodes the catalog and writes `dictionary.idx`, `.syn` and `.ifo` in `root`.
+pub fn write_catalog(
+    root: &Path,
+    title: &str,
+    items: &[CatalogItem],
+    aliases: &[CatalogAlias],
+    bytes: u64,
+    bits: u8,
+    limits: &Limits,
+) -> Result<Catalog> {
+    let encoded = encode_catalog(title, items, aliases, bytes, bits, limits)?;
+    write_file(root, "dictionary.idx", &encoded.idx)?;
+    write_file(root, "dictionary.syn", &encoded.syn)?;
+    write_file(root, "dictionary.ifo", &encoded.ifo)?;
+    Ok(encoded.catalog)
 }
 
 #[cfg(test)]
@@ -245,6 +299,78 @@ mod tests {
             parsed.entries[parsed.lookup("running")[0]].offset,
             shared.offset
         );
+    }
+    fn sample(writer: &mut PayloadWriter<impl Write>) -> (Vec<CatalogItem>, Vec<CatalogAlias>) {
+        let shared = writer.append(b"<b>shared meaning</b>").unwrap();
+        let separate = writer.append("<b>another \u{e9}</b>".as_bytes()).unwrap();
+        let items = vec![
+            CatalogItem {
+                id: 0,
+                word: "run".into(),
+                payload: shared,
+            },
+            CatalogItem {
+                id: 1,
+                word: "running".into(),
+                payload: shared,
+            },
+            CatalogItem {
+                id: 2,
+                word: "caf\u{e9}".into(),
+                payload: separate,
+            },
+        ];
+        let aliases = vec![CatalogAlias {
+            word: "runs".into(),
+            target_id: 0,
+        }];
+        (items, aliases)
+    }
+    #[test]
+    fn memory_and_disk_output_are_the_same_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let limits = Limits::default();
+        let mut disk = PayloadWriter::new(dir.path(), &limits, 64).unwrap();
+        let (items, aliases) = sample(&mut disk);
+        let bytes = disk.finish().unwrap();
+        let catalog =
+            write_catalog(dir.path(), "Test", &items, &aliases, bytes, 64, &limits).unwrap();
+
+        let mut memory = PayloadWriter::with_writer(Vec::new(), &limits, 64).unwrap();
+        sample(&mut memory);
+        let (dict, length) = memory.into_inner().unwrap();
+        let encoded = encode_catalog("Test", &items, &aliases, length, 64, &limits).unwrap();
+        let file = |name: &str| std::fs::read(dir.path().join(name)).unwrap();
+        assert_eq!(dict, file("dictionary.dict"));
+        assert_eq!(encoded.idx, file("dictionary.idx"));
+        assert_eq!(encoded.syn, file("dictionary.syn"));
+        assert_eq!(encoded.ifo, file("dictionary.ifo"));
+        assert_eq!(encoded.catalog.index, catalog.index);
+
+        // The pure parser reads exactly what `open` reads from disk.
+        let parsed =
+            crate::parse(&encoded.ifo, &encoded.idx, &encoded.syn, length, &limits).unwrap();
+        assert_eq!(parsed, crate::open(dir.path(), &limits).unwrap());
+    }
+    #[test]
+    fn payload_check_reads_the_stream_once_and_catches_changes() {
+        let limits = Limits::default();
+        let mut writer = PayloadWriter::with_writer(Vec::new(), &limits, 32).unwrap();
+        let written: Vec<(Payload, String)> = [&b"<i>one</i>"[..], b"<i>two</i>"]
+            .iter()
+            .map(|p| (writer.append(p).unwrap(), lexicon_core::sha256(p)))
+            .collect();
+        let (dict, _) = writer.into_inner().unwrap();
+        let mut shared = written.clone();
+        shared.push(written[0].clone());
+        crate::check_payloads(dict.as_slice(), &shared).unwrap();
+        let mut changed = dict.clone();
+        changed[4] ^= 1;
+        assert!(crate::check_payloads(changed.as_slice(), &written).is_err());
+        let mut longer = dict.clone();
+        longer.push(b'x');
+        assert!(crate::check_payloads(longer.as_slice(), &written).is_err());
+        assert!(crate::check_payloads(dict.as_slice(), &written[1..]).is_err());
     }
     #[test]
     fn partial_overlap_is_rejected() {

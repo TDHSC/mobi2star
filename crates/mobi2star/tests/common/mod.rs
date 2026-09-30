@@ -38,7 +38,7 @@ pub fn rewrite_with_digest(bundle: &Path, name: &str, bytes: &[u8]) {
 pub fn payload(root: &Path, word: &str) -> String {
     let limits = Limits::default();
     let parsed = stardict_io::open(root, &limits).unwrap();
-    let mut dict = fs::File::open(&parsed.dictionary_path).unwrap();
+    let mut dict = fs::File::open(stardict_io::dictionary_file(root).unwrap()).unwrap();
     let entry = &parsed.entries[parsed.lookup(word)[0]];
     stardict_io::read_payload(&mut dict, entry, limits.entry_bytes).unwrap()
 }

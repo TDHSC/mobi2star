@@ -1,22 +1,20 @@
 //! This parser reads emitted files independently of the writer's in-memory model.
-use crate::{compare_synonyms, compare_words, validate_key, IndexEntry, Synonym};
+use crate::{compare_synonyms, compare_words, validate_key, IndexEntry, Payload, Synonym};
 use lexicon_core::{
     bytes::{be32, be64},
-    checked_member, read_bounded, Error, Limits, Result,
+    checked_member, read_bounded, sha256, Error, Limits, Result,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::File,
     io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ParsedDictionary {
     pub entries: Vec<IndexEntry>,
     pub synonyms: Vec<Synonym>,
     pub offset_bits: u8,
-    pub dictionary_path: PathBuf,
     pub dictionary_bytes: u64,
 }
 impl ParsedDictionary {
@@ -71,10 +69,32 @@ fn word(data: &[u8], at: &mut usize) -> Result<String> {
     *at += length + 1;
     Ok(text)
 }
+/// Path of `dictionary.dict` in `root`.
+pub fn dictionary_file(root: &Path) -> Result<PathBuf> {
+    checked_member(root, "dictionary.dict")
+}
+/// Reads the dictionary files in `root` and parses them with [`parse`].
 pub fn open(root: &Path, limits: &Limits) -> Result<ParsedDictionary> {
-    let ifo_path = checked_member(root, "dictionary.ifo")?;
-    let ifo_bytes = read_bounded(&ifo_path, 65536)?;
-    let ifo = std::str::from_utf8(&ifo_bytes).map_err(|_| Error::Verify("IFO encoding".into()))?;
+    let ifo = read_bounded(&checked_member(root, "dictionary.ifo")?, 65536)?;
+    let idx = read_bounded(&checked_member(root, "dictionary.idx")?, limits.input_bytes)?;
+    let syn = read_bounded(&checked_member(root, "dictionary.syn")?, limits.input_bytes)?;
+    let dictionary_bytes = dictionary_file(root)?.metadata()?.len();
+    parse(&ifo, &idx, &syn, dictionary_bytes, limits)
+}
+/// Parses dictionary files independently of the writer's in-memory model and
+/// checks ordering, counts, ordinals and that the `.dict` of length
+/// `dictionary_bytes` is covered exactly.
+pub fn parse(
+    ifo_bytes: &[u8],
+    bytes: &[u8],
+    syn_bytes: &[u8],
+    dictionary_bytes: u64,
+    limits: &Limits,
+) -> Result<ParsedDictionary> {
+    if ifo_bytes.len() > 65536 {
+        return Err(Error::Limit("IFO byte budget".into()));
+    }
+    let ifo = std::str::from_utf8(ifo_bytes).map_err(|_| Error::Verify("IFO encoding".into()))?;
     let mut lines = ifo.lines();
     if lines.next() != Some("StarDict's dict ifo file") {
         return Err(Error::Verify("IFO magic".into()));
@@ -103,12 +123,12 @@ pub fn open(root: &Path, limits: &Limits) -> Result<ParsedDictionary> {
     {
         return Err(Error::Limit("output index count".into()));
     }
-    let bytes = read_bounded(&checked_member(root, "dictionary.idx")?, limits.input_bytes)?;
+    if bytes.len() > limits.input_bytes || syn_bytes.len() > limits.input_bytes {
+        return Err(Error::Limit("index file byte budget".into()));
+    }
     if bytes.len() as u64 != number(&fields, "idxfilesize")? {
         return Err(Error::Verify("IFO/IDX byte count mismatch".into()));
     }
-    let dictionary_path = checked_member(root, "dictionary.dict")?;
-    let dictionary_bytes = dictionary_path.metadata()?.len();
     if dictionary_bytes > limits.output_bytes {
         return Err(Error::Limit("DICT byte budget".into()));
     }
@@ -118,17 +138,17 @@ pub fn open(root: &Path, limits: &Limits) -> Result<ParsedDictionary> {
         if entries.len() >= limits.entries {
             return Err(Error::Limit("IDX entries".into()));
         }
-        let key = word(&bytes, &mut at)?;
+        let key = word(bytes, &mut at)?;
         let offset = if bits == 64 {
-            let n = be64(&bytes, at)?;
+            let n = be64(bytes, at)?;
             at += 8;
             n
         } else {
-            let n = be32(&bytes, at)?;
+            let n = be32(bytes, at)?;
             at += 4;
             u64::from(n)
         };
-        let size = be32(&bytes, at)?;
+        let size = be32(bytes, at)?;
         at += 4;
         if size == 0 || size as usize > limits.entry_bytes {
             return Err(Error::Verify("invalid payload size".into()));
@@ -168,15 +188,14 @@ pub fn open(root: &Path, limits: &Limits) -> Result<ParsedDictionary> {
     if end != dictionary_bytes {
         return Err(Error::Verify("trailing unindexed DICT bytes".into()));
     }
-    let syn_bytes = read_bounded(&checked_member(root, "dictionary.syn")?, limits.input_bytes)?;
     let mut synonyms: Vec<Synonym> = Vec::new();
     at = 0;
     while at < syn_bytes.len() {
         if synonyms.len() as u64 >= syn_count {
             return Err(Error::Verify("too many SYN records".into()));
         }
-        let key = word(&syn_bytes, &mut at)?;
-        let target = be32(&syn_bytes, at)?;
+        let key = word(syn_bytes, &mut at)?;
+        let target = be32(syn_bytes, at)?;
         at += 4;
         if target as usize >= entries.len() {
             return Err(Error::Verify("SYN ordinal out of range".into()));
@@ -197,11 +216,15 @@ pub fn open(root: &Path, limits: &Limits) -> Result<ParsedDictionary> {
         entries,
         synonyms,
         offset_bits: bits as u8,
-        dictionary_path,
         dictionary_bytes,
     })
 }
-pub fn read_payload(file: &mut File, entry: &IndexEntry, limit: usize) -> Result<String> {
+/// Reads one payload from a `.dict` file or any other seekable source.
+pub fn read_payload<R: Read + Seek>(
+    file: &mut R,
+    entry: &IndexEntry,
+    limit: usize,
+) -> Result<String> {
     if entry.size as usize > limit {
         return Err(Error::Limit("payload allocation".into()));
     }
@@ -214,4 +237,32 @@ pub fn read_payload(file: &mut File, entry: &IndexEntry, limit: usize) -> Result
         return Err(Error::Verify("NUL in HTML payload".into()));
     }
     Ok(text)
+}
+/// Reads a `.dict` stream front to back and checks every payload against the
+/// SHA-256 recorded when it was written. `written` lists (range, digest)
+/// pairs; exact shared ranges may repeat. The ranges must tile the stream
+/// from offset 0, as [`parse`] requires, and the stream must end after them.
+pub fn check_payloads(mut dict: impl Read, written: &[(Payload, String)]) -> Result<()> {
+    let mut ranges: Vec<&(Payload, String)> = written.iter().collect();
+    ranges.sort_by_key(|(payload, _)| *payload);
+    ranges.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+    let mut offset = 0u64;
+    let mut buffer = Vec::new();
+    for (payload, digest) in ranges {
+        if payload.offset != offset {
+            return Err(Error::Verify("payload ranges do not tile the DICT".into()));
+        }
+        buffer.resize(payload.size as usize, 0);
+        dict.read_exact(&mut buffer)?;
+        if sha256(&buffer) != *digest {
+            return Err(Error::Verify(
+                "DICT payload differs from what was written".into(),
+            ));
+        }
+        offset += u64::from(payload.size);
+    }
+    if dict.read(&mut [0u8])? != 0 {
+        return Err(Error::Verify("trailing unindexed DICT bytes".into()));
+    }
+    Ok(())
 }

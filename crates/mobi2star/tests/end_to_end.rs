@@ -64,7 +64,7 @@ fn homographs_are_not_overwritten() {
     let parsed = stardict_io::open(&bundle, &Limits::default()).unwrap();
     assert_eq!(parsed.lookup("run").len(), 2);
     assert!(parsed.lookup("cafe").is_empty()); // no normalization or speculative aliases
-    let mut file = fs::File::open(parsed.dictionary_path.clone()).unwrap();
+    let mut file = fs::File::open(stardict_io::dictionary_file(&bundle).unwrap()).unwrap();
     let payloads = parsed
         .lookup("run")
         .into_iter()
