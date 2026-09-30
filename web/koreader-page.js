@@ -60,14 +60,18 @@ export class KoreaderPages {
     const found = new Set();
     for (let n = 0, pages = document.countPages(); n < pages; n++) {
       const page = document.loadPage(n);
-      const text = page.toStructuredText();
-      text.walk({
-        onChar(char, origin, font) {
-          if (font.encodeCharacter(char.codePointAt(0)) === 0) found.add(char);
-        },
-      });
-      text.destroy();
-      page.destroy();
+      let text;
+      try {
+        text = page.toStructuredText();
+        text.walk({
+          onChar(char, origin, font) {
+            if (font.encodeCharacter(char.codePointAt(0)) === 0) found.add(char);
+          },
+        });
+      } finally {
+        text?.destroy();
+        page.destroy();
+      }
     }
     const last = found.size ? this.font(this.rules.koreaderLastFont()) : null;
     return last ? [...found].filter((char) => last.encodeCharacter(char.codePointAt(0)) > 0) : [];
@@ -86,10 +90,16 @@ export class KoreaderPages {
     }
     this.close();
     let document = this.layout(html, geometry);
-    const boxes = this.boxes(document);
-    if (boxes.length) {
+    try {
+      const boxes = this.boxes(document);
+      if (boxes.length) {
+        const again = this.layout(this.rules.koreaderWithLastFont(html, boxes.join('')), geometry);
+        document.destroy();
+        document = again;
+      }
+    } catch (error) {
       document.destroy();
-      document = this.layout(this.rules.koreaderWithLastFont(html, boxes.join('')), geometry);
+      throw error;
     }
     this.open = { html, width, height, em, document };
     return document;
@@ -105,9 +115,11 @@ export class KoreaderPages {
     const pages = document.countPages();
     const page = Math.min(Math.max(0, number), pages - 1);
     const loaded = document.loadPage(page);
-    const text = loaded.toStructuredText();
-    const pixmap = loaded.toPixmap(Matrix.identity, ColorSpace.DeviceGray, false);
+    let text;
+    let pixmap;
     try {
+      text = loaded.toStructuredText();
+      pixmap = loaded.toPixmap(Matrix.identity, ColorSpace.DeviceGray, false);
       const width = pixmap.getWidth();
       const height = pixmap.getHeight();
       const gray = pixmap.getPixels();
@@ -120,17 +132,19 @@ export class KoreaderPages {
         }
       }
       const links = loaded.getLinks().map((link) => {
-        const rect = link.getBounds();
-        const middle = (rect[1] + rect[3]) / 2;
-        const label = text.copy([rect[0] + 1, middle], [rect[2] - 1, middle]).trim();
-        const uri = link.getURI();
-        link.destroy();
-        return { rect, uri, label };
+        try {
+          const rect = link.getBounds();
+          const middle = (rect[1] + rect[3]) / 2;
+          const label = text.copy([rect[0] + 1, middle], [rect[2] - 1, middle]).trim();
+          return { rect, uri: link.getURI(), label };
+        } finally {
+          link.destroy();
+        }
       });
       return { page, pages, width, height, pixels, links, text: text.asText() };
     } finally {
-      pixmap.destroy();
-      text.destroy();
+      pixmap?.destroy();
+      text?.destroy();
       loaded.destroy();
     }
   }

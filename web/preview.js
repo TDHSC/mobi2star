@@ -132,9 +132,21 @@ class PageView {
     this.text = element('div', { className: 'visually-hidden' });
     this.links = element('div', { className: 'preview-links' });
     this.element = element('div', { className: 'preview-page' }, [this.canvas, this.text, this.links]);
+    /** Nothing is drawn: the page is hidden. */
+    this.blank = true;
+  }
+
+  /** Takes the page away while another document is drawn. */
+  clear() {
+    this.canvas.width = 0;
+    this.canvas.height = 0;
+    this.links.replaceChildren();
+    this.text.textContent = '';
+    this.blank = true;
   }
 
   show({ width, height, pixels, links, text }) {
+    this.blank = false;
     this.canvas.width = width;
     this.canvas.height = height;
     this.canvas.getContext('2d').putImageData(new ImageData(pixels, width, height), 0, 0);
@@ -208,12 +220,13 @@ export class PreviewPanel {
         this.info = info;
         this.choices = choices;
         this.apps = info.apps;
-        this.app = this.apps[0] ?? null;
+        // Every --reader choice has at least one reader to preview.
+        this.app = this.apps[0];
         this.screen = choices.koreader.screens[0].id;
         this.fontSize = choices.koreader.fontSizes.default;
-        this.status = this.app ? null : { key: 'previewUnavailable' };
+        this.status = null;
         this.render();
-        if (this.app) this.random();
+        this.random();
       })
       .catch((error) => this.fail(error));
   }
@@ -270,7 +283,7 @@ export class PreviewPanel {
     this.fontInput = element('input', { type: 'number', id: 'preview-font-size', inputMode: 'numeric' });
     this.fontInput.addEventListener('change', () => {
       const { min, max } = this.choices.koreader.fontSizes;
-      const size = Math.round(Number(this.fontInput.value));
+      const size = Math.round(this.fontInput.valueAsNumber);
       if (Number.isFinite(size)) this.fontSize = Math.min(Math.max(size, min), max);
       this.fontInput.value = this.fontSize;
       this.redraw();
@@ -377,7 +390,7 @@ export class PreviewPanel {
     this.statusLine.textContent = this.statusText();
     this.stage.hidden = !this.view;
     this.frameView.element.hidden = paged;
-    this.pageView.element.hidden = !paged;
+    this.pageView.element.hidden = !paged || this.pageView.blank;
     if (this.app && !paged) this.frameView.size(this.app);
     const results = this.view ? this.steps(this.view) : 0;
     this.step(this.resultTurner, ui.previewResult, this.result, results, ui.previousResult, ui.nextResult);
@@ -473,7 +486,7 @@ export class PreviewPanel {
         this.status = null;
         this.input.value = this.word(this.view);
         this.render();
-        await this.show(this.view.scroll_to);
+        await this.display(this.view.scroll_to);
         break;
       case 'scroll':
         this.frameView.scroll(outcome.id);
@@ -489,6 +502,15 @@ export class PreviewPanel {
     }
   }
 
+  /** Shows the current result, reporting a failure instead of throwing. */
+  async display(scrollTo) {
+    try {
+      await this.show(scrollTo);
+    } catch (error) {
+      this.fail({ code: 'OTHER', detail: String(error?.message ?? error) });
+    }
+  }
+
   /** Draws the current result of the current view. */
   show(scrollTo) {
     if (this.oneAtATime(this.view)) return this.draw();
@@ -496,10 +518,18 @@ export class PreviewPanel {
     return this.frameView.show(this.view.documents[0], scrollTo);
   }
 
-  /** Has the worker draw the current page with MuPDF. */
-  async draw() {
+  /**
+   * Has the worker draw the current page with MuPDF. Unless only the page
+   * changes, the page shown belongs to another document: it goes, so that
+   * none of its links can be followed against the new one.
+   */
+  async draw({ fresh = true } = {}) {
     this.cancelDraw();
     const id = this.drawing;
+    if (fresh) {
+      this.pageView.clear();
+      this.render();
+    }
     const slow = setTimeout(() => {
       if (id !== this.drawing) return;
       this.slow = true;
@@ -548,14 +578,14 @@ export class PreviewPanel {
     this.pages = 1;
     this.status = null;
     this.render();
-    this.show();
+    this.display();
   }
 
   turnPage(step) {
     this.page = Math.min(Math.max(this.page + step, 0), this.pages - 1);
     this.status = null;
     this.render();
-    this.draw();
+    this.draw({ fresh: false });
   }
 
   search(word, options) {
@@ -570,8 +600,10 @@ export class PreviewPanel {
   }
 
   async random() {
+    const before = this.latest;
     const word = await this.request('random').catch(() => null);
-    if (word) this.search(word);
+    // A lookup started meanwhile, typed or followed, wins.
+    if (word && this.latest === before) this.search(word);
   }
 
   back() {
@@ -582,7 +614,7 @@ export class PreviewPanel {
     this.status = null;
     this.input.value = this.word(this.view);
     this.render();
-    this.show(this.view.scroll_to);
+    this.display(this.view.scroll_to);
   }
 
   async suggest() {
