@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.6.0-alpha.1 — Preview in your reader
 
 - New: **Preview** on the browser page. After a conversion, look words up and follow links in the converted dictionary as the chosen reader shows it: KOReader (drawn by MuPDF 1.27.0, the engine KOReader uses, with KOReader's fonts, device presets and dictionary font size), GoldenDict-ng, GoldenDict Mobile, Readest, or a Kobo dictionary made with PyGlossary; `universal` switches among them. Entries are shown sandboxed and cannot run script or load anything. See docs/WEB.md.
 - The browser page is now AGPL-3.0-or-later, because it includes the new `reader-view` crate and bundles MuPDF. The CLI and its libraries stay MIT.
 - Fixed: internal links in compiled-backend dictionaries were "not found" in KOReader, which looks up everything after `bword://` including the `#anchor`. Each link's exact key is now an alias of the entry it points into, as publisher-source dictionaries already had. Reconvert compiled-backend dictionaries; publisher-source output (such as Collins COBUILD) is unchanged.
+- Library:
+  - `ParsedDictionary` has the `.ifo` `bookname`; `html_preserve::Plan::link_aliases` lists each internal link's exact lookup key; `html_preserve::decode_entities` is public;
+  - `image_type` moved to `lexicon_core::bytes` and is re-exported from `mobi_reader::container`;
+  - `read_limited` reserves the declared size first, so a size memory cannot hold is a `Limit` error instead of an abort.
 
 ## 0.5.0-alpha.1 — Convert in the browser
 
