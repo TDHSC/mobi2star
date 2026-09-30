@@ -73,4 +73,6 @@ node tools/web-smoke.mjs target/release/mobi2star --measure BOOK.mobi   # also t
 
 ## Deployment
 
-`.github/workflows/pages.yml` runs when a `v*` tag is pushed. It checks that the tag matches the crate version, builds the site, runs the smoke test, and deploys `_site/` to GitHub Pages. See [RELEASING.md](RELEASING.md).
+The release workflow deploys the page, only after the GitHub release itself is published, so a failed release publishes no page. See [RELEASING.md](RELEASING.md).
+
+Each deployment replaces the whole site, so it also carries the previous release's `v/<version>/` files, listed in that release's `files.txt`. A page opened before the update, or served from the browser cache, can still start its worker. Only one earlier release is kept. If loading fails anyway, the page suggests reloading.

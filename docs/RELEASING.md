@@ -41,17 +41,12 @@ Finally, the `publish` job:
 
 ## Browser page
 
-The same tag push runs `.github/workflows/pages.yml`, which publishes the browser page to <https://tdhsc.github.io/mobi2star/>. It:
+The same workflow publishes the browser page to <https://tdhsc.github.io/mobi2star/>, after the release:
 
-1. Fails unless the tag is exactly `v` followed by the crate version.
-2. Builds the site (`tools/build-web.sh`) and runs the WebAssembly smoke test against the CLI.
-3. Deploys `_site/` to the `github-pages` environment.
+1. The `site` job runs `.github/workflows/web.yml` once `check` passes. It builds the site (`tools/build-web.sh`) and runs the WebAssembly smoke test against the CLI. On a tag it also adds the currently published release's `v/<version>/` files (`tools/keep-published-release.sh`), so pages opened before the update keep working, and uploads the Pages artifact.
+2. The `pages` job deploys that artifact to the `github-pages` environment, but only after `publish` has succeeded. A tag whose release fails therefore publishes no page.
 
-To redeploy a release, run it on that tag:
-
-```sh
-gh workflow run pages.yml --ref vX.Y.Z
-```
+To redeploy a release, re-run the `site` job of its release run from the Actions page. The `pages` job depends on it and re-runs with it.
 
 The repository needs a one-time setup before the first deployment:
 - enable Pages with GitHub Actions as the source (`gh api -X POST repos/TDHSC/mobi2star/pages -f build_type=workflow`);
@@ -59,7 +54,7 @@ The repository needs a one-time setup before the first deployment:
 
 ## Dry run
 
-Start the workflow manually to build and smoke-test every archive without publishing anything:
+Start the workflow manually to build and smoke-test every archive and the browser page without publishing anything:
 
 ```sh
 gh workflow run release.yml

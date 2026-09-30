@@ -10,6 +10,10 @@ on:
         description: Upload _site/ as the GitHub Pages artifact
         type: boolean
         default: false
+      published-site:
+        description: URL of the published page, whose release files the artifact keeps
+        type: string
+        default: ""
 permissions:
   contents: read
 jobs:
@@ -48,6 +52,12 @@ jobs:
         run: |
           node --version
           node tools/web-smoke.mjs target/release/mobi2star
+      # After the comparison, which expects one version in _site/v.
+      - name: Keep the published release's files for pages already open
+        if: inputs.pages-artifact && inputs.published-site != ''
+        env:
+          SITE: ${{ inputs.published-site }}
+        run: tools/keep-published-release.sh "$SITE"
       - if: inputs.pages-artifact
         uses: actions/upload-pages-artifact@v5
         with:

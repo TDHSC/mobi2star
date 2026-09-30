@@ -14,7 +14,7 @@ The page at <https://tdhsc.github.io/mobi2star/> runs the converter as WebAssemb
 - The file is read in the visitor's browser and never uploaded. The page's Content Security Policy forbids the page itself any network request (`connect-src 'none'`). It cannot cover the worker, because GitHub Pages sends no CSP header; there the guarantee rests on the code, which fetches only its own `.wasm`.
 - The site has no analytics, cookies or third-party resources. `localStorage` holds only the chosen page language.
 - The same input budgets apply, with `Limits::browser()` caps. A hostile file can at worst stop the worker, which the page reports; each conversion runs in a fresh worker that is terminated afterwards.
-- The page is built from the tagged source by `.github/workflows/pages.yml` and served over HTTPS. The pages workflow also compares its output with the CLI before deploying.
+- The page is built from the tagged source by the release workflow and served over HTTPS. The workflow compares its output with the CLI and deploys only after the release is published. The previous release's files, which the deployment keeps for pages already open, are fetched from the live site; they were built the same way from their own tag.
 
 ## Hostile-input controls
 

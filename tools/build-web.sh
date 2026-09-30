@@ -23,5 +23,8 @@ assets="_site/v/$version"
 wasm-bindgen --target web --no-typescript --out-dir "$assets" --out-name mobi2star \
   target/wasm32-unknown-unknown/web/mobi2star_web.wasm
 cp web/app.js web/worker.js web/i18n.js web/style.css web/icon.svg "$assets/"
+# The next deployment keeps these files (tools/keep-published-release.sh).
+files=$(cd "$assets" && ls)
+printf '%s\n' "$files" > "$assets/files.txt"
 sed "s/__VERSION__/$version/g" web/index.html > _site/index.html
 printf '%s\n' "Built _site/ for mobi2star $version."
