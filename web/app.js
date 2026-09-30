@@ -129,7 +129,11 @@ function renderResult() {
   link.download = result.fileName;
   link.textContent = format(ui.download, { name: result.fileName, size: size(result.zip.size) });
   $('install').replaceChildren(...text().readers[result.reader].install.map((step) => element('li', step)));
-  $('checks').replaceChildren(...(report.verification_scope ?? report.notes).map((line) => element('li', line)));
+  // Publisher-source reports list their checks; compiled reports have notes
+  // on what the checks do and do not cover.
+  const checks = report.verification_scope;
+  $('checks-title').textContent = checks ? ui.details : ui.notes;
+  $('checks').replaceChildren(...(checks ?? report.notes).map((line) => element('li', line)));
 }
 
 /** Clears the previous outcome and frees its download. */
