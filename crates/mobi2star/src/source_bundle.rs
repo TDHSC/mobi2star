@@ -2,23 +2,24 @@
 //! MOBI and compares the actual artifacts, in addition to an independent IDX reader.
 use crate::{
     bundle::collect_files,
+    dictionary::{check_written, DictionaryBuilder, DirReadBack, WrittenDictionary},
     manifest::{check_header, TOOL},
     transaction::{sync_directory, Transaction},
     tree::{DiskTree, Tree},
     FileDigest, OutputOptions,
 };
 use lexicon_core::{
-    checked_member, hash_file, read_bounded, sha256, Error, LabelLanguage, Limits, Result, Span,
-    TargetReader,
+    checked_member, hash_file, read_bounded, sha256, Error, LabelLanguage, Limits, Resource,
+    Result, Span, TargetReader,
 };
-use mobi_reader::Container;
+use mobi_reader::{container::TextRecord, Container};
 use serde::{Deserialize, Serialize};
-use srcs_reader::{SourceArchive, SourceBook};
+use srcs_reader::{Crosscheck, SourceArchive, SourceBook};
 use srcs_render::{browser, Plan, Rendered};
-use stardict_io::{CatalogAlias, CatalogItem, Payload, PayloadWriter};
+use stardict_io::{ParsedDictionary, Payload};
 use std::{
     collections::BTreeSet,
-    fs::{self, File},
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -145,19 +146,36 @@ fn chapter_word(id: usize, title: &str, labels: LabelLanguage) -> String {
     out
 }
 
-fn build(
-    source: &[u8],
-    root: &Path,
-    limits: &Limits,
-    options: OutputOptions,
-) -> Result<SourceReport> {
-    let OutputOptions {
-        offset_bits: bits,
-        labels,
-        reader,
-    } = options;
-    let text = labels.text();
-    let style = reader.style_delivery();
+/// A parsed, cross-checked and planned publisher-source book.
+struct Prepared<'s> {
+    source: &'s [u8],
+    namespace: String,
+    book: SourceBook,
+    plan: Plan,
+    resources: Vec<Resource>,
+    /// Report counts about the compiled text, kept after that text is dropped.
+    rawml_bytes: usize,
+    classified_pdb_records: usize,
+}
+/// Compiled-side facts that only the full bundle's Audit/ records.
+struct AuditInputs<'s> {
+    mobi: Container<'s>,
+    archive: &'s [u8],
+    rawml: Vec<u8>,
+    text_records: Vec<TextRecord>,
+    cross: Crosscheck,
+}
+/// What the dictionary stage produced for the checks, audits and report.
+struct DictionaryFacts {
+    written: WrittenDictionary,
+    articles: Vec<ArticleAudit>,
+    images: Vec<ImageAudit>,
+}
+const DICTIONARY_DIR: &str = "StarDict/";
+
+/// Parses the embedded publisher source, cross-checks it against the
+/// compiled MOBI and plans the rendering.
+fn prepare<'s>(source: &'s [u8], limits: &Limits) -> Result<(Prepared<'s>, AuditInputs<'s>)> {
     let mobi = Container::open(source, limits)?;
     let (src_record, archive) = mobi
         .source_archive()?
@@ -168,44 +186,54 @@ fn build(
     let namespace = sha256(source);
     let plan = Plan::build(&book, &namespace)?;
     let resources = mobi.resources()?;
-    let mut tree = DiskTree::new(root, limits);
+    let prepared = Prepared {
+        source,
+        namespace,
+        book,
+        plan,
+        resources,
+        rawml_bytes: rawml.len(),
+        classified_pdb_records: cross.record_roles.len(),
+    };
+    let audit = AuditInputs {
+        mobi,
+        archive,
+        rawml,
+        text_records,
+        cross,
+    };
+    Ok((prepared, audit))
+}
+
+/// Writes the StarDict dictionary under `StarDict/`: stylesheet and image
+/// resources first, then every definition, chapter and image gallery.
+fn write_dictionary(
+    tree: &mut impl Tree,
+    prepared: &Prepared,
+    limits: &Limits,
+    options: OutputOptions,
+) -> Result<DictionaryFacts> {
+    let Prepared {
+        source,
+        namespace,
+        book,
+        plan,
+        resources,
+        ..
+    } = prepared;
+    let text = options.labels.text();
+    let style = options.reader.style_delivery();
     for (path, bytes) in stardict_io::stylesheet_files(&plan.stylesheet(), style) {
-        tree.put(&format!("StarDict/{path}"), bytes)?;
+        tree.put(&format!("{DICTIONARY_DIR}{path}"), bytes)?;
     }
-    tree.put("Audit/original.mobi", source)?;
-    tree.put("Audit/embedded-source.zip", archive)?;
-    tree.put("Audit/rawml.bin", &rawml)?;
-    tree.put_json("Audit/container-header.json", &mobi.header)?;
-    tree.put_json("Audit/text-records.json", &text_records)?;
-    tree.put_json("Audit/compiled-crosscheck.json", &cross)?;
-    tree.put_json("Audit/source-definitions.json", &book.entries)?;
-    tree.put_json("Audit/source-headwords.json", &book.orths)?;
-    tree.put_json("Audit/source-inflections.json", &book.forms)?;
-    tree.put_json("Audit/source-pages.json", &book.pages)?;
-    tree.put_json("Audit/package.json", &book.package)?;
-    tree.put_json("Audit/render-plan.json", &plan)?;
-    let pdb_records=mobi.pdb.records.iter().enumerate().map(|(n,span)|Ok(serde_json::json!({"number":n,"span":span,"role":cross.record_roles[n],"sha256":sha256(span.bytes(source)?)}))).collect::<Result<Vec<_>>>()?;
-    tree.put_json("Audit/pdb-records.json", &pdb_records)?;
-    let mut image_audit = Vec::new();
-    let mut source_gallery = Vec::new();
-    let mut compiled_gallery = Vec::new();
-    let mut browser_gallery = Vec::new();
+    let mut images = Vec::new();
     for (file, bytes) in &book.files {
-        tree.put(&format!("Source/{file}"), bytes)?;
-        if let Some(page) = book.pages.get(file) {
-            tree.put(
-                &format!("Browser/{}", srcs_render::browser_path(file)),
-                &plan.browser_page(&book, page)?,
-            )?;
-        } else {
-            tree.put(&format!("Browser/content/{file}"), bytes)?;
-        }
         if !book.pages.contains_key(file) {
-            tree.put(&format!("StarDict/res/source/{file}"), bytes)?;
+            tree.put(&format!("{DICTIONARY_DIR}res/source/{file}"), bytes)?;
         }
         if mobi_reader::container::image_type(bytes).is_some() {
             let (width, height) = srcs_reader::validate_image(bytes, limits.text_bytes)?;
-            image_audit.push(ImageAudit {
+            images.push(ImageAudit {
                 file: file.clone(),
                 origin: "source_zip".into(),
                 bytes: bytes.len(),
@@ -213,19 +241,16 @@ fn build(
                 width,
                 height,
             });
-            source_gallery.push((file.clone(), format!("source/{file}")));
-            browser_gallery.push((file.clone(), format!("content/{file}")));
         }
     }
-    for resource in &resources {
+    for resource in resources {
         let bytes = resource.source_span.bytes(source)?;
         let (width, height) = srcs_reader::validate_image(bytes, limits.text_bytes)?;
         tree.put(
-            &format!("StarDict/res/compiled/{}", resource.filename),
+            &format!("{DICTIONARY_DIR}res/compiled/{}", resource.filename),
             bytes,
         )?;
-        tree.put(&format!("Browser/compiled/{}", resource.filename), bytes)?;
-        image_audit.push(ImageAudit {
+        images.push(ImageAudit {
             file: resource.filename.clone(),
             origin: format!("pdb_record_{}", resource.pdb_record),
             bytes: bytes.len(),
@@ -233,36 +258,22 @@ fn build(
             width,
             height,
         });
-        compiled_gallery.push((
-            resource.filename.clone(),
-            format!("compiled/{}", resource.filename),
-        ));
-        browser_gallery.push((
-            resource.filename.clone(),
-            format!("compiled/{}", resource.filename),
-        ));
     }
-    tree.put_json("Audit/images.json", &image_audit)?;
-    tree.put("Browser/index.html", &browser::index(&book, &plan, labels))?;
-    tree.put("Browser/lookup-data.js", &browser::lookup_data(&book)?)?;
-    tree.put("Browser/viewer.css", browser::CSS.as_bytes())?;
-    tree.put("Browser/viewer.js", browser::JS.as_bytes())?;
-    let mut all_images=format!("<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"><title>{}</title><style>{}</style></head><body class=\"m2s-readable\">",
-        text.html_lang,srcs_render::escape(text.all_images),srcs_render::readability::CSS).into_bytes();
-    all_images.extend(gallery(text.all_images, &browser_gallery));
-    all_images.extend_from_slice(b"</body></html>");
-    tree.put("Browser/images.html", &all_images)?;
-    let dictroot = root.join("StarDict");
-    fs::create_dir_all(&dictroot)?;
-    let mut payload_limits = limits.clone();
-    payload_limits.output_bytes = limits.output_bytes.saturating_sub(tree.used());
-    let mut writer = PayloadWriter::new(&dictroot, &payload_limits, bits)?;
+    let gallery_items = |source_zip: bool, dir: &str| -> Vec<(String, String)> {
+        images
+            .iter()
+            .filter(|image| (image.origin == "source_zip") == source_zip)
+            .map(|image| (image.file.clone(), format!("{dir}/{}", image.file)))
+            .collect()
+    };
+    let source_gallery = gallery_items(true, "source");
+    let compiled_gallery = gallery_items(false, "compiled");
+
+    let mut builder = DictionaryBuilder::start(tree, DICTIONARY_DIR, limits, options.offset_bits)?;
     let mut articles = Vec::new();
-    let mut items = Vec::new();
-    let mut aliases = Vec::new();
     for entry in &book.entries {
-        let rendered = plan.definition(&book, entry, style)?;
-        let payload = writer.append(&rendered.bytes)?;
+        let rendered = plan.definition(book, entry, style)?;
+        let payload = builder.append(&rendered.bytes)?;
         articles.push(article_audit(
             "definition",
             entry.id,
@@ -273,26 +284,16 @@ fn build(
             payload,
         )?);
         for &id in &entry.orths {
-            items.push(CatalogItem {
-                id: id as u64,
-                word: book.orths[id].value.clone(),
-                payload,
-            });
+            builder.item(id as u64, book.orths[id].value.clone(), payload);
         }
         let first = *entry
             .orths
             .first()
             .ok_or_else(|| Error::Incomplete("definition has no headword".into()))?;
-        aliases.push(CatalogAlias {
-            word: srcs_render::entry_route(&namespace, entry.id),
-            target_id: first as u64,
-        });
+        builder.alias(srcs_render::entry_route(namespace, entry.id), first as u64);
     }
     for form in &book.forms {
-        aliases.push(CatalogAlias {
-            word: form.value.clone(),
-            target_id: form.orth_id as u64,
-        });
+        builder.alias(form.value.clone(), form.orth_id as u64);
     }
     let source_words: BTreeSet<&str> = book
         .orths
@@ -323,14 +324,13 @@ fn build(
             (book.orths.len() + plan.page_ids[&link.target.file]) as u64
         };
         if fragment_aliases.insert((word.clone(), target_id)) {
-            aliases.push(CatalogAlias { word, target_id });
+            builder.alias(word, target_id);
         }
     }
-
     for (file, &id) in &plan.page_ids {
         let page = &book.pages[file];
-        let rendered = plan.chapter(&book, page, style)?;
-        let payload = writer.append(&rendered.bytes)?;
+        let rendered = plan.chapter(book, page, style)?;
+        let payload = builder.append(&rendered.bytes)?;
         articles.push(article_audit(
             "chapter",
             id,
@@ -340,22 +340,15 @@ fn build(
             &rendered,
             payload,
         )?);
-        let word = chapter_word(id, &page.title, labels);
+        let word = chapter_word(id, &page.title, options.labels);
         if source_words.contains(word.as_str()) {
             return Err(Error::Incomplete(
                 "chapter key collides with source word".into(),
             ));
         }
         let target_id = (book.orths.len() + id) as u64;
-        items.push(CatalogItem {
-            id: target_id,
-            word,
-            payload,
-        });
-        aliases.push(CatalogAlias {
-            word: srcs_render::page_route(&namespace, id),
-            target_id,
-        });
+        builder.item(target_id, word, payload);
+        builder.alias(srcs_render::page_route(namespace, id), target_id);
     }
     for (i, (title, images)) in [
         (text.source_images, &source_gallery),
@@ -383,61 +376,45 @@ fn build(
             }
             None => original_gallery,
         };
-        let payload = writer.append(&rendered_gallery)?;
-        items.push(CatalogItem {
-            id: (book.orths.len() + book.pages.len() + i) as u64,
-            word: title.into(),
-            payload,
-        });
+        let payload = builder.append(&rendered_gallery)?;
+        let id = (book.orths.len() + book.pages.len() + i) as u64;
+        builder.item(id, title.into(), payload);
     }
-    let dictbytes = writer.finish()?;
-    tree.account(dictbytes)?;
-    let catalog = stardict_io::write_catalog(
-        &dictroot,
-        &book.package.title,
-        &items,
-        &aliases,
-        dictbytes,
-        bits,
-        limits,
-    )?;
-    for name in ["dictionary.idx", "dictionary.syn", "dictionary.ifo"] {
-        tree.account(dictroot.join(name).metadata()?.len())?;
-    }
-    // Separately implemented reader checks the files just written, including all
-    // duplicate headwords, alias ordinals and exact shared physical ranges.
-    let disk = stardict_io::open(&dictroot, limits)?;
-    if disk.entries != catalog.index || disk.synonyms != catalog.synonyms {
-        return Err(Error::Verify("catalog differs after disk readback".into()));
-    }
-    let mut dictfile = File::open(stardict_io::dictionary_file(&dictroot)?)?;
-    for article in &articles {
-        let at = stardict_io::IndexEntry {
-            word: String::new(),
-            offset: article.payload.offset,
-            size: article.payload.size,
-        };
-        let html = stardict_io::read_payload(&mut dictfile, &at, limits.entry_bytes)?;
-        if sha256(html.as_bytes()) != article.payload_sha256 {
-            return Err(Error::Verify("article payload changed during write".into()));
-        }
-    }
-    // Every generated internal route must resolve to exactly its intended payload.
+    let written = builder.finish(&book.package.title, options.offset_bits, limits)?;
+    Ok(DictionaryFacts {
+        written,
+        articles,
+        images,
+    })
+}
+
+/// Every generated internal route must resolve to exactly its intended payload.
+fn check_routes(
+    parsed: &ParsedDictionary,
+    prepared: &Prepared,
+    articles: &[ArticleAudit],
+) -> Result<()> {
+    let Prepared {
+        namespace,
+        book,
+        plan,
+        ..
+    } = prepared;
     for entry in &book.entries {
-        let targets = disk.lookup(&srcs_render::entry_route(&namespace, entry.id));
+        let targets = parsed.lookup(&srcs_render::entry_route(namespace, entry.id));
         if targets.len() != 1
-            || disk.entries[targets[0]].offset != articles[entry.id].payload.offset
+            || parsed.entries[targets[0]].offset != articles[entry.id].payload.offset
         {
             return Err(Error::Verify("internal definition route readback".into()));
         }
     }
     for (file, &id) in &plan.page_ids {
-        let targets = disk.lookup(&srcs_render::page_route(&namespace, id));
+        let targets = parsed.lookup(&srcs_render::page_route(namespace, id));
         let expected = articles
             .get(book.entries.len() + id)
             .ok_or_else(|| Error::Verify("chapter audit ordinal".into()))?;
         if targets.len() != 1
-            || disk.entries[targets[0]].offset != expected.payload.offset
+            || parsed.entries[targets[0]].offset != expected.payload.offset
             || expected.source_file != *file
         {
             return Err(Error::Verify("internal chapter route readback".into()));
@@ -456,22 +433,113 @@ fn build(
         let expected = link
             .target_entry
             .unwrap_or(book.entries.len() + plan.page_ids[&link.target.file]);
-        let hits = disk.lookup(&key);
-        if hits.len() != 1 || disk.entries[hits[0]].offset != articles[expected].payload.offset {
+        let hits = parsed.lookup(&key);
+        if hits.len() != 1 || parsed.entries[hits[0]].offset != articles[expected].payload.offset {
             return Err(Error::Verify("reader exact fragment route readback".into()));
         }
     }
-    tree.put_json("Audit/articles.json", &articles)?;
-    tree.put_json("Audit/catalog-items.json", &items)?;
-    tree.put_json("Audit/catalog-aliases.json", &aliases)?;
-    let report=SourceReport{
+    Ok(())
+}
+
+/// The full bundle's Audit/, Source/ and Browser/ trees.
+fn write_extras(
+    tree: &mut impl Tree,
+    prepared: &Prepared,
+    audit: &AuditInputs,
+    facts: &DictionaryFacts,
+    labels: LabelLanguage,
+) -> Result<()> {
+    let Prepared {
+        source,
+        book,
+        plan,
+        resources,
+        ..
+    } = prepared;
+    let text = labels.text();
+    tree.put("Audit/original.mobi", source)?;
+    tree.put("Audit/embedded-source.zip", audit.archive)?;
+    tree.put("Audit/rawml.bin", &audit.rawml)?;
+    tree.put_json("Audit/container-header.json", &audit.mobi.header)?;
+    tree.put_json("Audit/text-records.json", &audit.text_records)?;
+    tree.put_json("Audit/compiled-crosscheck.json", &audit.cross)?;
+    tree.put_json("Audit/source-definitions.json", &book.entries)?;
+    tree.put_json("Audit/source-headwords.json", &book.orths)?;
+    tree.put_json("Audit/source-inflections.json", &book.forms)?;
+    tree.put_json("Audit/source-pages.json", &book.pages)?;
+    tree.put_json("Audit/package.json", &book.package)?;
+    tree.put_json("Audit/render-plan.json", plan)?;
+    let pdb_records=audit.mobi.pdb.records.iter().enumerate().map(|(n,span)|Ok(serde_json::json!({"number":n,"span":span,"role":audit.cross.record_roles[n],"sha256":sha256(span.bytes(source)?)}))).collect::<Result<Vec<_>>>()?;
+    tree.put_json("Audit/pdb-records.json", &pdb_records)?;
+    for (file, bytes) in &book.files {
+        tree.put(&format!("Source/{file}"), bytes)?;
+        if let Some(page) = book.pages.get(file) {
+            tree.put(
+                &format!("Browser/{}", srcs_render::browser_path(file)),
+                &plan.browser_page(book, page)?,
+            )?;
+        } else {
+            tree.put(&format!("Browser/content/{file}"), bytes)?;
+        }
+    }
+    for resource in resources {
+        tree.put(
+            &format!("Browser/compiled/{}", resource.filename),
+            resource.source_span.bytes(source)?,
+        )?;
+    }
+    tree.put_json("Audit/images.json", &facts.images)?;
+    tree.put("Browser/index.html", &browser::index(book, plan, labels))?;
+    tree.put("Browser/lookup-data.js", &browser::lookup_data(book)?)?;
+    tree.put("Browser/viewer.css", browser::CSS.as_bytes())?;
+    tree.put("Browser/viewer.js", browser::JS.as_bytes())?;
+    let browser_gallery: Vec<(String, String)> = facts
+        .images
+        .iter()
+        .map(|image| {
+            let dir = if image.origin == "source_zip" {
+                "content"
+            } else {
+                "compiled"
+            };
+            (image.file.clone(), format!("{dir}/{}", image.file))
+        })
+        .collect();
+    let mut all_images=format!("<!doctype html><html lang=\"{}\"><head><meta charset=\"utf-8\"><title>{}</title><style>{}</style></head><body class=\"m2s-readable\">",
+        text.html_lang,srcs_render::escape(text.all_images),srcs_render::readability::CSS).into_bytes();
+    all_images.extend(gallery(text.all_images, &browser_gallery));
+    all_images.extend_from_slice(b"</body></html>");
+    tree.put("Browser/images.html", &all_images)?;
+    tree.put_json("Audit/articles.json", &facts.articles)?;
+    tree.put_json("Audit/catalog-items.json", &facts.written.items)?;
+    tree.put_json("Audit/catalog-aliases.json", &facts.written.aliases)?;
+    Ok(())
+}
+
+fn report(prepared: &Prepared, facts: &DictionaryFacts, options: OutputOptions) -> SourceReport {
+    let Prepared {
+        namespace,
+        book,
+        plan,
+        resources,
+        rawml_bytes,
+        classified_pdb_records,
+        ..
+    } = prepared;
+    let catalog = &facts.written.encoded.catalog;
+    let source_images = facts
+        .images
+        .iter()
+        .filter(|i| i.origin == "source_zip")
+        .count();
+    SourceReport{
         schema:SCHEMA,backend:BACKEND.into(),implemented_content_checks_passed:true,rendering_status:"unverified_reader_dependent".into(),layout_profile:plan.layout_profile.clone(),
         source_sha256:namespace.clone(),source_archive_sha256:book.archive_sha256.clone(),source_headwords:book.orths.len(),source_aliases:book.forms.len(),
         definitions:book.entries.len(),chapters:book.pages.len(),supplement_entries:book.pages.len()+2,
         output_entries:catalog.index.len(),output_synonyms:catalog.synonyms.len(),source_body_bytes:book.source_body_bytes(),covered_source_body_bytes:book.source_body_bytes(),
-        rawml_bytes:rawml.len(),source_files:book.files.len(),source_images:source_gallery.len(),compiled_images:resources.len(),internal_links:plan.links.len(),
+        rawml_bytes:*rawml_bytes,source_files:book.files.len(),source_images,compiled_images:resources.len(),internal_links:plan.links.len(),
         external_links:book.pages.values().map(|p|p.links.iter().filter(|l|l.target.is_none()).count()).sum(),
-        source_image_references:book.pages.values().map(|p|p.images.len()).sum(),classified_pdb_records:cross.record_roles.len(),skipped_entries:0,offset_bits:bits,reader,
+        source_image_references:book.pages.values().map(|p|p.images.len()).sum(),classified_pdb_records:*classified_pdb_records,skipped_entries:0,offset_bits:options.offset_bits,reader:options.reader,
         verification_scope:vec!["SRCS/compiled headword and inflection multisets with ownership and multiplicity".into(),
             "Every definition's whitespace-normalized visible text agrees with compiled MOBI".into(),
             "Every source chapter body is rendered by byte-preserving edits; all ZIP files retained exactly".into(),
@@ -479,9 +547,19 @@ fn build(
             "Actual StarDict index, synonyms and shared payload ranges independently read back".into(),
             "Complete bundle regenerated from original MOBI before atomic publication".into(),
             "Display/layout equivalence and reading-system behavior require reader acceptance".into()],
-    };
-    tree.put_json("report.json", &report)?;
-    tree.put("README.txt",b"mobi2star native Rust source bundle\n\nStarDict/: import the whole directory including res/.\nBrowser/index.html: offline viewer (JavaScript runs only in your browser).\nSource/: byte-exact original publisher-source files.\nAudit/: original MOBI, embedded ZIP, decompressed compiled text and provenance.\n\nContent checks are scoped in report.json. Reader rendering remains unverified.\nVerify with: mobi2star verify BUNDLE --source ORIGINAL.mobi --json\n")?;
+    }
+}
+
+const README: &[u8] = b"mobi2star native Rust source bundle\n\nStarDict/: import the whole directory including res/.\nBrowser/index.html: offline viewer (JavaScript runs only in your browser).\nSource/: byte-exact original publisher-source files.\nAudit/: original MOBI, embedded ZIP, decompressed compiled text and provenance.\n\nContent checks are scoped in report.json. Reader rendering remains unverified.\nVerify with: mobi2star verify BUNDLE --source ORIGINAL.mobi --json\n";
+
+/// Hashes every file under `root` into the manifest, within the budget.
+fn write_manifest(
+    tree: &mut impl Tree,
+    root: &Path,
+    namespace: String,
+    options: OutputOptions,
+    limits: &Limits,
+) -> Result<()> {
     let mut total = 0u64;
     let files = collect_files(root)?
         .into_iter()
@@ -506,9 +584,9 @@ fn build(
         tool: TOOL.into(),
         version: env!("CARGO_PKG_VERSION").into(),
         source_sha256: namespace,
-        offset_bits: bits,
-        labels,
-        reader,
+        offset_bits: options.offset_bits,
+        labels: options.labels,
+        reader: options.reader,
         files,
     };
     let encoded = serde_json::to_vec_pretty(&manifest)?;
@@ -518,7 +596,29 @@ fn build(
     {
         return Err(Error::Limit("aggregate bundle with manifest".into()));
     }
-    tree.put_json("manifest.json", &manifest)?;
+    tree.put_json("manifest.json", &manifest)
+}
+
+/// Builds the full bundle in `root`: dictionary, readback checks, audit
+/// trees, report and manifest.
+fn build(
+    source: &[u8],
+    root: &Path,
+    limits: &Limits,
+    options: OutputOptions,
+) -> Result<SourceReport> {
+    let (prepared, audit) = prepare(source, limits)?;
+    let mut tree = DiskTree::new(root, limits);
+    let facts = write_dictionary(&mut tree, &prepared, limits, options)?;
+    // A separately implemented reader checks the files just written, including
+    // all duplicate headwords, alias ordinals and exact shared physical ranges.
+    let parsed = check_written(&mut DirReadBack(root), &facts.written, limits)?;
+    check_routes(&parsed, &prepared, &facts.articles)?;
+    write_extras(&mut tree, &prepared, &audit, &facts, options.labels)?;
+    let report = report(&prepared, &facts, options);
+    tree.put_json("report.json", &report)?;
+    tree.put("README.txt", README)?;
+    write_manifest(&mut tree, root, prepared.namespace.clone(), options, limits)?;
     sync_tree(root)?;
     Ok(report)
 }

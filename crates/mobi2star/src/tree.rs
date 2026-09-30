@@ -17,6 +17,8 @@ pub(crate) trait Tree {
     fn put(&mut self, path: &str, bytes: &[u8]) -> Result<()>;
     /// Opens a file to be written in pieces, for outputs too large to hold.
     fn stream(&mut self, path: &str) -> Result<&mut dyn Write>;
+    /// The stream opened by `stream`, while it is open.
+    fn stream_writer(&mut self) -> Result<&mut dyn Write>;
     /// Closes the open stream; returns its length.
     fn end_stream(&mut self) -> Result<u64>;
     /// Bytes written so far, counted against the output budget.
@@ -98,10 +100,6 @@ impl<'a> DiskTree<'a> {
             .create_new(true)
             .open(target)?)
     }
-    /// Counts bytes written to this directory by code outside the tree.
-    pub fn account(&mut self, bytes: u64) -> Result<()> {
-        self.budget.charge(bytes)
-    }
 }
 impl Tree for DiskTree<'_> {
     fn put(&mut self, path: &str, bytes: &[u8]) -> Result<()> {
@@ -120,6 +118,12 @@ impl Tree for DiskTree<'_> {
             inner: BufWriter::new(file),
             bytes: 0,
         }))
+    }
+    fn stream_writer(&mut self) -> Result<&mut dyn Write> {
+        match self.stream.as_mut() {
+            Some(stream) => Ok(stream),
+            None => Err(Error::Incomplete("no open stream".into())),
+        }
     }
     fn end_stream(&mut self) -> Result<u64> {
         let mut stream = self
