@@ -3,7 +3,7 @@
 pub mod browser;
 pub mod css;
 pub mod readability;
-use lexicon_core::{Error, Result, Span, StyleDelivery, LINK_TAG};
+use lexicon_core::{Error, Result, Span, StyleDelivery};
 use serde::{Deserialize, Serialize};
 use srcs_reader::{uri, Definition, Page, SourceBook, Target};
 use std::collections::{BTreeMap, BTreeSet};
@@ -361,22 +361,8 @@ impl Plan {
         (self.layout_profile == readability::PROFILE).then_some(0)
     }
     /// Stylesheet references a payload using style set `set` starts with.
-    /// A set without CSS needs none.
     pub fn style_prefix(&self, set: usize, style: StyleDelivery) -> String {
-        let css = &self.style_sets[set].css;
-        let mut out = String::new();
-        if css.is_empty() {
-            return out;
-        }
-        if style.link {
-            out.push_str(LINK_TAG);
-        }
-        if style.inline {
-            out.push_str("<style>");
-            out.push_str(css);
-            out.push_str("</style>");
-        }
-        out
+        style.references(&self.style_sets[set].css)
     }
     fn render(
         &self,
@@ -459,6 +445,7 @@ pub fn replay(raw: &[u8], edits: &[Edit], span: Span) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lexicon_core::LINK_TAG;
     #[test]
     fn splice_preserves_every_other_byte() {
         let e = vec![Edit {

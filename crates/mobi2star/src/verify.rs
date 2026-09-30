@@ -177,12 +177,7 @@ pub fn verify(root: &Path, original_source: Option<&Path>, limits: &Limits) -> R
         plan == saved_plan,
         "HTML edit/link plan differs from source-derived plan",
     )?;
-    check_stylesheets(
-        root,
-        &html_preserve::stylesheet(&doc, &plan)?,
-        style,
-        limits,
-    )?;
+    check_stylesheets(root, &plan.stylesheet, style, limits)?;
     let parsed = stardict_io::open(root, limits)?;
     ensure(
         parsed.offset_bits == manifest.offset_bits,

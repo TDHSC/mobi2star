@@ -77,6 +77,23 @@ impl StyleDelivery {
         link: false,
         inline: true,
     };
+    /// Stylesheet references a payload starts with when `css` applies to it:
+    /// the link, then an inline copy. CSS that is empty needs none.
+    pub fn references(self, css: &str) -> String {
+        let mut out = String::new();
+        if css.is_empty() {
+            return out;
+        }
+        if self.link {
+            out.push_str(LINK_TAG);
+        }
+        if self.inline {
+            out.push_str("<style>");
+            out.push_str(css);
+            out.push_str("</style>");
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -117,6 +134,22 @@ mod tests {
                 "\"universal\""
             ]
         );
+    }
+    #[test]
+    fn references_follow_the_delivery() {
+        let both = StyleDelivery {
+            link: true,
+            inline: true,
+        };
+        assert_eq!(
+            StyleDelivery::INLINE.references("p{}"),
+            "<style>p{}</style>"
+        );
+        assert_eq!(
+            both.references("p{}"),
+            format!("{LINK_TAG}<style>p{{}}</style>")
+        );
+        assert_eq!(both.references(""), "");
     }
     #[test]
     fn link_tag_names_the_stylesheet_file() {

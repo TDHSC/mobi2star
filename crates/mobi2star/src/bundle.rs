@@ -134,7 +134,7 @@ pub(crate) fn report(
             "All source spellings and explicit inflections are retained without Unicode normalization; reader lookup/folding may differ.".into(),
             "Internal links use stable entry aliases plus exact byte-position anchors; fragment navigation must be acceptance-tested in the target reader.".into(),
             "Images are copied byte-for-byte after signature recognition; image decoding and rendered appearance are not verified.".into(),
-            "Source <style> bodies form dictionary.css; payloads reference it as the recorded reader needs (res/ link, inline copies or both). Inherited container context, embedded book structure and reader CSS can still change appearance.".into(),
+            "Source <style> bodies are scoped under the book's wrapper class to form dictionary.css; payloads sit in that wrapper and reference the stylesheet as the recorded reader needs (res/ link, inline copies or both). A <style> element inside an entry stays in that entry as source bytes. Container context and reader CSS can still change appearance.".into(),
             "The manifest detects accidental changes, not malicious replacement: it is not digitally signed.".into(),
         ] }
 }
@@ -159,8 +159,7 @@ pub fn convert(
     fs::create_dir(root.join("archive"))?;
     fs::create_dir(root.join("res"))?;
     let style = reader.style_delivery();
-    let css = html_preserve::stylesheet(&document, &plan)?;
-    for (path, bytes) in stardict_io::stylesheet_files(&css, style) {
+    for (path, bytes) in stardict_io::stylesheet_files(&plan.stylesheet, style) {
         write_bytes(root, &path, bytes)?;
     }
     let written = stardict_io::write(root, &document, limits, offset_bits, |entry| {

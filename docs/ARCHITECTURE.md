@@ -33,7 +33,7 @@ The compiled adapter retains the alpha.1 `Document` model and its source-byte un
 
 `srcs-render::Plan` maps actual source targets to source-hash-scoped routes and produces sorted, nonoverlapping edits. Each rendered article consists of a recorded wrapper, a byte-preserving edited source fragment and closing wrappers. Full chapters provide body coverage. Source resource attributes, source spellings and source archives remain available for replay and forensic comparison.
 
-CSS scoping accepts a deliberately bounded grammar: simple selectors, declarations and nested media blocks. Complex selectors and resource/executable constructs trigger an error so their semantics can be added explicitly. Body/ancestor wrappers and CSS can behave differently across reading engines; the report always preserves the separate rendering acceptance status.
+CSS scoping lives in `html_preserve::css` and is shared by both backends. It prefixes every selector with the payload wrapper class, which can only narrow a match. Publisher-source books use the bounded grammar: simple selectors, declarations and nested media blocks, with complex selectors and resource/executable constructs rejected so their semantics can be added explicitly. Compiled books use the open grammar: any selector, `@media`/`@supports` scoped recursively, descriptor at-rules kept verbatim, and CSS's own error recovery for unclosed blocks, trailing incomplete rules and HTML comment delimiters. Body/ancestor wrappers and CSS can behave differently across reading engines; the report always preserves the separate rendering acceptance status.
 
 The offline browser generator emits local HTML/CSS/JavaScript and lookup records. It starts no browser or server, performs no requests, and does not invoke a helper process. Original image bytes are used directly. Raster decoding validates supported images; animation and reader-specific presentation remain reading-system concerns.
 
@@ -48,9 +48,10 @@ The `compiled` writer is now a thin adapter to these same primitives. The standa
 Readers load a dictionary stylesheet in different ways (see [READERS.md](READERS.md)). One concept lives in each layer:
 
 - `lexicon_core::TargetReader` names the reader, and `style_delivery()` maps it to a `StyleDelivery { link, inline }`. `STYLESHEET_FILE` and `LINK_TAG` are the shared names.
+- `StyleDelivery::references()` writes a payload's link and/or inline copy for both backends.
 - Each renderer produces one dictionary-wide stylesheet and the per-payload references:
-  - `srcs_render::Plan` groups pages by their ordered stylesheet list. Each `StyleSet` is scoped under its own wrapper class, so every set can share one file without changing any page's cascade. `Plan::stylesheet()` joins the sets; `Plan::style_prefix()` writes a payload's link and/or inline copy.
-  - `html_preserve::stylesheet()` joins the source `<style>` bodies. `render_fragment()` adds the link, and copies the `<style>` elements only for inline delivery. Style bodies that cannot be joined safely are errors: unbalanced CSS, print-only media, or elements split by an entry boundary.
+  - `srcs_render::Plan` groups pages by their ordered stylesheet list. Each `StyleSet` is scoped under its own wrapper class, so every set can share one file without changing any page's cascade. `Plan::stylesheet()` joins the sets; `Plan::style_prefix()` gives a payload the references for its set.
+  - `html_preserve::build()` scopes each source `<style>` body on its own under the book's wrapper class and records the result in `Plan::stylesheet`. Because each body is a complete rule list, text left over in one body cannot join the next body's selector. `render_fragment()` places styled payloads in that wrapper, after the references its delivery asks for. `<style>` elements with non-screen media or a `title`, and elements split by an entry boundary, are errors.
 - `stardict_io::stylesheet_files()` owns the file layout: `dictionary.css` next to the `.ifo` always, and `res/dictionary.css` when payloads link to it.
 
 The reader is chosen at render time, so `Audit/render-plan.json`, `edits.json` and the offline viewer do not depend on it.

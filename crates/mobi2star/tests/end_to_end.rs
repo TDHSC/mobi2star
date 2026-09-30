@@ -142,7 +142,9 @@ fn converted(dir: &Path, reader: TargetReader) -> (std::path::PathBuf, std::path
 }
 #[test]
 fn each_reader_gets_its_stylesheet_delivery() {
-    let css = ".definition{font-weight:normal}\n";
+    // The source <style> body, scoped under the book's wrapper class.
+    let class = html_preserve::css::scope_class(&sha256(PLAIN));
+    let css = format!(".{class} .definition{{font-weight:normal}}\n");
     for reader in TargetReader::ALL {
         let delivery = reader.style_delivery();
         let dir = tempfile::tempdir().unwrap();
@@ -155,7 +157,7 @@ fn each_reader_gets_its_stylesheet_delivery() {
             fs::read_to_string(bundle.join("res/dictionary.css"))
                 .ok()
                 .as_deref(),
-            delivery.link.then_some(css),
+            delivery.link.then_some(css.as_str()),
             "{reader:?}"
         );
         // "run" lies outside the source <style>, so every reference in it is generated.
@@ -166,6 +168,7 @@ fn each_reader_gets_its_stylesheet_delivery() {
             stardict_io::read_payload(&mut dict, run, Limits::default().entry_bytes).unwrap();
         assert_eq!(html.starts_with(LINK_TAG), delivery.link, "{reader:?}");
         assert_eq!(html.contains("<style>"), delivery.inline, "{reader:?}");
+        assert!(html.contains(&format!("<div class=\"{class}\">")) && html.ends_with("</div>"));
         mobi2star::verify(&bundle, Some(&source), &Limits::default()).unwrap();
     }
 }

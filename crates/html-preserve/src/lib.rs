@@ -2,9 +2,7 @@
 #![forbid(unsafe_code)]
 pub mod css;
 pub mod tokenizer;
-use lexicon_core::{
-    Document, Encoding, Entry, Error, Limits, Result, Span, StyleDelivery, LINK_TAG,
-};
+use lexicon_core::{Document, Encoding, Entry, Error, Limits, Result, Span, StyleDelivery};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Reverse,
@@ -45,6 +43,11 @@ pub struct Plan {
     pub resource_links: Vec<ResourceLink>,
     pub styles: Vec<StyleBlock>,
     pub external_links: usize,
+    /// Class of the wrapper that styled payloads are placed in.
+    pub scope: String,
+    /// The dictionary stylesheet: every `<style>` body in document order,
+    /// scoped under `scope`. Empty when the book has no CSS.
+    pub stylesheet: String,
 }
 #[derive(Clone)]
 enum Target {
@@ -127,47 +130,6 @@ fn check_css(text: &str) -> Result<()> {
     }
     Ok(())
 }
-/// Style bodies are joined into one stylesheet file, where an unclosed block,
-/// comment or string would swallow the next body. Separate `<style>` elements
-/// used to contain that, so the joined form requires each body to be closed.
-/// Backslash escapes are already rejected by `check_css`.
-fn check_balanced(css: &str) -> Result<()> {
-    let bytes = css.as_bytes();
-    let unbalanced = || {
-        Error::Unsupported("unbalanced CSS in <style>; cannot join into a stylesheet file".into())
-    };
-    let mut depth = 0usize;
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                let end = css[i + 2..].find("*/").ok_or_else(unbalanced)?;
-                i += end + 4;
-                continue;
-            }
-            quote @ (b'"' | b'\'') => {
-                let end = bytes[i + 1..]
-                    .iter()
-                    .position(|&c| c == quote || c == b'\n')
-                    .ok_or_else(unbalanced)?;
-                if bytes[i + 1 + end] != quote {
-                    return Err(unbalanced());
-                }
-                i += end + 2;
-                continue;
-            }
-            b'{' => depth += 1,
-            b'}' => depth = depth.checked_sub(1).ok_or_else(unbalanced)?,
-            _ => {}
-        }
-        i += 1;
-    }
-    if depth == 0 {
-        Ok(())
-    } else {
-        Err(unbalanced())
-    }
-}
 /// Only attributes whose meaning survives moving the body into a shared
 /// stylesheet file: a CSS `type`, and a `media` that applies on screen.
 fn check_style_element(tag: &Tag, raw: &[u8], encoding: Encoding) -> Result<()> {
@@ -187,23 +149,6 @@ fn check_style_element(tag: &Tag, raw: &[u8], encoding: Encoding) -> Result<()> 
     }
     Ok(())
 }
-/// Whether a `<style>` body holds any CSS. The stylesheet file and the
-/// per-payload link use this same test, so a link never points at nothing.
-fn has_css(style: &StyleBlock, raw: &[u8]) -> Result<bool> {
-    Ok(!style.css.bytes(raw)?.iter().all(u8::is_ascii_whitespace))
-}
-/// The dictionary stylesheet: every non-blank `<style>` body in document order.
-pub fn stylesheet(doc: &Document, plan: &Plan) -> Result<String> {
-    let mut out = String::new();
-    for style in &plan.styles {
-        if has_css(style, &doc.rawml)? {
-            out.push_str(&doc.encoding.decode(style.css.bytes(&doc.rawml)?)?);
-            out.push('\n');
-        }
-    }
-    Ok(out)
-}
-
 pub fn build(doc: &Document, limits: &Limits) -> Result<Plan> {
     let raw = &doc.rawml;
     let mut plan = Plan::default();
@@ -234,9 +179,7 @@ pub fn build(doc: &Document, limits: &Limits) -> Result<Plan> {
         match token {
             Token::Raw { name, span } => {
                 if name == "style" {
-                    let css = doc.encoding.decode(span.bytes(raw)?)?;
-                    check_css(&css)?;
-                    check_balanced(&css)?;
+                    check_css(&doc.encoding.decode(span.bytes(raw)?)?)?;
                     style_css = Some(span);
                 }
             }
@@ -408,6 +351,17 @@ pub fn build(doc: &Document, limits: &Limits) -> Result<Plan> {
     if style_start.is_some() {
         return Err(Error::Malformed("unclosed style element".into()));
     }
+    // Each body is scoped on its own, so it is a complete rule list: text left
+    // over at the end of one body can never join the next body's selector.
+    plan.scope = css::scope_class(&doc.namespace);
+    for style in &plan.styles {
+        let body = doc.encoding.decode(style.css.bytes(raw)?)?;
+        let scoped = css::scope(&body, &plan.scope, css::Grammar::Open)?;
+        if !scoped.is_empty() {
+            plan.stylesheet.push_str(&scoped);
+            plan.stylesheet.push('\n');
+        }
+    }
     let mut resolved = Vec::new();
     let mut positions = BTreeSet::new();
     for link in pending {
@@ -527,24 +481,12 @@ pub fn render_fragment(
 ) -> Result<String> {
     span.bytes(raw)?;
     let mut result = String::new();
-    if delivery.link {
-        let mut linked = false;
-        for style in &plan.styles {
-            linked |= has_css(style, raw)?;
-        }
-        if linked {
-            result.push_str(LINK_TAG);
-        }
-    }
-    // Inline copies are the source <style> elements outside this entry, copied
-    // byte for byte. This cannot certify renderer equivalence.
-    if delivery.inline {
-        for style in &plan.styles {
-            let element = style.element;
-            if !(span.start <= element.start && element.end <= span.end) {
-                result.push_str(&encoding.decode(element.bytes(raw)?)?);
-            }
-        }
+    // Styled payloads sit in the wrapper the scoped stylesheet targets. A
+    // <style> element inside the entry stays there as source bytes.
+    let styled = !plan.stylesheet.is_empty();
+    if styled {
+        result.push_str(&delivery.references(&plan.stylesheet));
+        result.push_str(&format!("<div class=\"{}\">", plan.scope));
     }
     let first = plan.edits.partition_point(|e| e.span.start < span.start);
     let mut cursor = span.start;
@@ -560,6 +502,9 @@ pub fn render_fragment(
         cursor = edit.span.end;
     }
     result.push_str(&encoding.decode(&raw[cursor..span.end])?);
+    if styled {
+        result.push_str("</div>");
+    }
     Ok(result)
 }
 
@@ -599,10 +544,17 @@ mod tests {
         let plan = build(&doc, &Limits::default())?;
         Ok((doc, plan))
     }
+    fn render_all(doc: &Document, plan: &Plan, delivery: StyleDelivery) -> String {
+        let span = Span {
+            start: 0,
+            end: doc.rawml.len(),
+        };
+        render_fragment(&doc.rawml, doc.encoding, span, plan, delivery).unwrap()
+    }
     #[test]
-    fn style_bodies_form_the_stylesheet_in_document_order() {
+    fn style_bodies_form_the_scoped_stylesheet_in_document_order() {
         let (doc, plan) = plan_for(
-            "<style type=\"text/css\">.a{color:red}</style><style media=\"screen\">.b{x:\"}\"}</style><style></style>",
+            "<style type=\"text/css\">.a{color:red}</style><style media=\"screen\">body .b{x:\"}\"}</style><style></style>",
         )
         .unwrap();
         assert_eq!(plan.styles.len(), 3);
@@ -610,9 +562,40 @@ mod tests {
             plan.styles[0].element.bytes(&doc.rawml).unwrap(),
             b"<style type=\"text/css\">.a{color:red}</style>"
         );
+        let class = &plan.scope;
         assert_eq!(
-            stylesheet(&doc, &plan).unwrap(),
-            ".a{color:red}\n.b{x:\"}\"}\n"
+            plan.stylesheet,
+            format!(".{class} .a{{color:red}}\n.{class} .b{{x:\"}}\"}}\n")
+        );
+        // Styled payloads sit in the wrapper the stylesheet targets.
+        let html = render_all(&doc, &plan, StyleDelivery::INLINE);
+        assert!(html.starts_with(&format!(
+            "<style>{}</style><div class=\"{class}\">",
+            plan.stylesheet
+        )));
+        assert!(html.ends_with("</div>"));
+    }
+    #[test]
+    fn leftover_text_in_one_body_never_joins_the_next_selector() {
+        let (_, plan) = plan_for("<style>.x{a:b} h1</style><style>p{color:red}</style>").unwrap();
+        let class = &plan.scope;
+        assert_eq!(
+            plan.stylesheet,
+            format!(".{class} .x{{a:b}}\n.{class} p{{color:red}}\n")
+        );
+        assert!(!plan.stylesheet.contains("h1"));
+    }
+    #[test]
+    fn blank_styles_give_no_stylesheet_link_or_wrapper() {
+        let (doc, plan) = plan_for("<style>  \n </style><style></style>").unwrap();
+        assert!(plan.stylesheet.is_empty());
+        let both = StyleDelivery {
+            link: true,
+            inline: true,
+        };
+        assert_eq!(
+            render_all(&doc, &plan, both).as_bytes(),
+            doc.rawml.as_slice()
         );
     }
     #[test]
@@ -620,10 +603,9 @@ mod tests {
         for styles in [
             "<style media=\"print\">.a{}</style>",
             "<style title=\"alt\">.a{}</style>",
-            "<style>.a{color:red</style>",
             "<style>.a{}}</style>",
-            "<style>/* open .a{}</style>",
             "<style>.a{content:\"x}</style>",
+            "<style>@layer base{p{}}</style>",
         ] {
             assert!(plan_for(styles).is_err(), "{styles}");
         }

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The compiled backend now scopes its stylesheet under a per-book wrapper class, as the SRCS backend already did. `body`/`html` rules style the entry, not the whole KOReader popup, and inline copies no longer leak into other dictionaries. Scoping is shared (`html_preserve::css`), with an open grammar for compiled books that accepts any selector and applies CSS's own error recovery.
+- Fixed: text left over at the end of one compiled `<style>` body could join the first selector of the next body in `dictionary.css`.
+
 ## 0.4.0-alpha.1 — Reader-targeted stylesheets
 
 - Alpha: reader behavior was established from source code and a MuPDF render comparison, not on devices; docs/READERS.md gives the confidence for each reader. Bundles from 0.3 must be verified with 0.3 or reconverted.
