@@ -30,6 +30,12 @@ pub fn version() -> String {
     crate::version().into()
 }
 
+/// The largest file the page accepts, checked before reading it.
+#[wasm_bindgen(js_name = maxInputBytes)]
+pub fn max_input_bytes() -> usize {
+    crate::max_input_bytes()
+}
+
 /// The page's reader and label choices as JSON.
 #[wasm_bindgen]
 pub fn choices() -> String {

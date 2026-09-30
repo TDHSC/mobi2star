@@ -1,6 +1,7 @@
 #!/bin/sh
-# Builds the browser page into _site/: the WebAssembly converter and its JS
-# glue under v/<version>/, so a cached page never mixes files of two releases.
+# Builds the browser page into _site/: index.html at the root, and the page's
+# scripts, styles and the WebAssembly converter under v/<version>/, so a
+# cached page never mixes files of two releases.
 # --bindgen-version prints the wasm-bindgen-cli version it needs.
 set -eu
 cd "$(dirname "$0")/.."
@@ -18,6 +19,9 @@ fi
 # A cdylib only for this build, so native builds stay plain libraries.
 cargo rustc -p mobi2star-web --profile web --target wasm32-unknown-unknown --locked --crate-type cdylib
 rm -rf _site
-wasm-bindgen --target web --no-typescript --out-dir "_site/v/$version" --out-name mobi2star \
+assets="_site/v/$version"
+wasm-bindgen --target web --no-typescript --out-dir "$assets" --out-name mobi2star \
   target/wasm32-unknown-unknown/web/mobi2star_web.wasm
+cp web/app.js web/worker.js web/i18n.js web/style.css web/icon.svg "$assets/"
+sed "s/__VERSION__/$version/g" web/index.html > _site/index.html
 printf '%s\n' "Built _site/ for mobi2star $version."

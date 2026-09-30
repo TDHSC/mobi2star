@@ -1,6 +1,7 @@
 // Smoke test for the browser build, with Node and no npm packages. It loads
 // _site/ as the page's worker does and requires every archive to unzip to
-// exactly the files `mobi2star convert --profile stardict` writes.
+// exactly the files `mobi2star convert --profile stardict` writes. It also
+// checks that the page's text covers every choice in both languages.
 //
 //   node tools/web-smoke.mjs CLI [--measure BOOK.mobi]
 //
@@ -122,6 +123,24 @@ function failsWith(code, source, choices) {
 const choices = JSON.parse(wasm.choices());
 check(wasm.version() === versions[0], 'version differs from the asset folder');
 check(isDeepStrictEqual(choices.labels, ['en', 'zh']), 'label choices');
+check(wasm.maxInputBytes() === 256 * 1024 * 1024, 'browser input limit');
+
+/** Every key path in a nested object, with arrays counted by length. */
+function shape(value, prefix = '') {
+  if (Array.isArray(value)) return [`${prefix}[${value.length}]`];
+  if (value === null || typeof value !== 'object') return [prefix];
+  return Object.keys(value).sort().flatMap((key) => shape(value[key], `${prefix}.${key}`));
+}
+const { LANGUAGES, TEXT, format } = await import(pathToFileURL(join(assets, 'i18n.js')));
+check(isDeepStrictEqual(LANGUAGES, Object.keys(TEXT)), 'languages');
+for (const lang of LANGUAGES) {
+  check(isDeepStrictEqual(shape(TEXT[lang]), shape(TEXT.en)), `${lang} text has other keys than en`);
+  check(isDeepStrictEqual(Object.keys(TEXT[lang].readers), choices.readers), `${lang} readers`);
+  check(isDeepStrictEqual(Object.keys(TEXT[lang].labels), choices.labels), `${lang} labels`);
+}
+check(format('{a} of {b}', { a: 1, b: 2 }) === '1 of 2', 'format');
+const page = readFileSync('_site/index.html', 'utf8');
+check(!page.includes('__VERSION__') && page.includes(`v/${versions[0]}/app.js`), 'index.html version');
 let n = 0;
 for (const book of ['tests/fixtures/srcs.mobi', 'tests/fixtures/huff.mobi', 'tests/fixtures/uncompressed.mobi']) {
   for (const reader of choices.readers) {

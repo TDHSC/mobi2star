@@ -1,0 +1,88 @@
+<!doctype html>
+<!-- tools/build-web.sh replaces __VERSION__; assets live under v/<version>/. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- The page itself fetches nothing. The worker has no policy of its own:
+       GitHub Pages cannot send one as a header. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Convert a MOBI dictionary to StarDict in your browser. The file never leaves your device.">
+  <title>mobi2star</title>
+  <link rel="icon" href="v/__VERSION__/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="v/__VERSION__/style.css">
+  <script type="module" src="v/__VERSION__/app.js"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>mobi2star</h1>
+      <p data-text="ui.tagline"></p>
+    </div>
+    <button type="button" id="language" class="quiet"></button>
+  </header>
+
+  <main>
+    <p class="privacy" data-text="ui.privacy"></p>
+
+    <form id="form">
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept=".mobi,.prc,.azw">
+        <span data-text="ui.choose"></span>
+        <span id="chosen" class="hint"></span>
+      </label>
+
+      <div class="field">
+        <label for="reader" data-text="ui.reader"></label>
+        <select id="reader"></select>
+        <p id="reader-description" class="hint"></p>
+      </div>
+
+      <div class="field">
+        <label for="labels" data-text="ui.labels"></label>
+        <select id="labels"></select>
+        <p class="hint" data-text="ui.labelsHint"></p>
+      </div>
+
+      <div class="actions">
+        <button type="submit" id="convert" data-text="ui.convert" disabled></button>
+        <button type="button" id="cancel" class="quiet" data-text="ui.cancel" hidden></button>
+      </div>
+      <p id="notice" role="status"></p>
+      <p class="hint" data-text="ui.mobile"></p>
+    </form>
+
+    <section id="progress" aria-live="polite" hidden>
+      <progress id="bar"></progress>
+      <p id="stage"></p>
+    </section>
+
+    <section id="error" role="alert" hidden>
+      <h2 id="error-title"></h2>
+      <p id="error-detail" class="hint"></p>
+      <p class="hint" data-text="ui.cliHint"></p>
+    </section>
+
+    <section id="result" hidden>
+      <h2 data-text="ui.done"></h2>
+      <p data-text="ui.checksPassed"></p>
+      <dl id="summary"></dl>
+      <a id="download" class="button" href="#"></a>
+      <h3 data-text="ui.install"></h3>
+      <ol id="install"></ol>
+      <details>
+        <summary data-text="ui.details"></summary>
+        <ul id="checks" lang="en"></ul>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <span id="version" data-version="__VERSION__"></span>
+    <a href="https://github.com/TDHSC/mobi2star" data-text="ui.sourceCode"></a>
+    <a href="https://github.com/TDHSC/mobi2star/blob/v__VERSION__/docs/READERS.md" data-text="ui.readerNotes"></a>
+    <span data-text="ui.license"></span>
+  </footer>
+</body>
+</html>

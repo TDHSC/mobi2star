@@ -48,6 +48,11 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// The largest file the page accepts, checked before reading it.
+pub fn max_input_bytes() -> usize {
+    Limits::browser().input_bytes
+}
+
 /// The values the page offers, as JSON: `{"readers": [..], "labels": [..]}`.
 pub fn choices() -> String {
     serde_json::json!({
