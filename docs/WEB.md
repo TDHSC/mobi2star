@@ -69,7 +69,7 @@ node tools/web-smoke.mjs target/release/mobi2star
 node tools/web-smoke.mjs target/release/mobi2star --measure BOOK.mobi   # also time BOOK
 ```
 
-CI runs Clippy for `wasm32`, the build and this comparison on every push (the `web` job in `ci.yml`).
+`.github/workflows/web.yml` runs Clippy for `wasm32`, the build and this comparison. CI calls it on every push, and the release workflow calls it before deploying.
 
 ## Deployment
 

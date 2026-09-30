@@ -1,0 +1,54 @@
+name: web
+# The browser page: WebAssembly lints, the site build, and its output
+# compared byte for byte with the CLI's `--profile stardict`. ci.yml calls
+# this on every push; release.yml calls it with `pages-artifact` and
+# deploys the result once the release is published.
+on:
+  workflow_call:
+    inputs:
+      pages-artifact:
+        description: Upload _site/ as the GitHub Pages artifact
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust with the WebAssembly target
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown
+          rustup default stable
+      - name: Read the wasm-bindgen version in Cargo.lock
+        id: bindgen
+        run: echo "version=$(tools/build-web.sh --bindgen-version)" >> "$GITHUB_OUTPUT"
+      # Building wasm-bindgen-cli takes minutes, and it changes only with Cargo.lock.
+      - name: Restore wasm-bindgen-cli
+        id: cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.wasm-bindgen
+          key: wasm-bindgen-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.bindgen.outputs.version }}
+      - name: Install wasm-bindgen-cli
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          VERSION: ${{ steps.bindgen.outputs.version }}
+        run: cargo install wasm-bindgen-cli --locked --version "$VERSION" --root ~/.wasm-bindgen
+      - name: Put wasm-bindgen on the PATH
+        run: echo "$HOME/.wasm-bindgen/bin" >> "$GITHUB_PATH"
+      - name: Lint the browser crate for WebAssembly
+        run: cargo clippy -p mobi2star-web --target wasm32-unknown-unknown --all-targets --locked -- -D warnings
+      - name: Build the site
+        run: ./tools/build-web.sh
+      - name: Build the CLI to compare against
+        run: cargo build -p mobi2star --release --locked
+      - name: Compare the WebAssembly output with the CLI
+        run: |
+          node --version
+          node tools/web-smoke.mjs target/release/mobi2star
+      - if: inputs.pages-artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site

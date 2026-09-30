@@ -12,7 +12,7 @@ The script checks formatting (run `cargo fmt --all` to fix it) and runs the whol
 cargo test -p srcs-render --locked
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same script on Ubuntu and macOS, runs the test suite on the minimum supported Rust version (1.85, the `rust-version` in `Cargo.toml`), and builds and tests the browser page (see [WEB.md](WEB.md#building-and-testing-locally) to run that locally).
+CI (`.github/workflows/ci.yml`) runs the same script on Ubuntu and macOS, runs the test suite on the minimum supported Rust version (1.85, the `rust-version` in `Cargo.toml`), and builds and tests the browser page through `web.yml` (see [WEB.md](WEB.md#building-and-testing-locally) to run that locally).
 
 ## What the tests cover
 
