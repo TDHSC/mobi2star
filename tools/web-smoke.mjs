@@ -8,7 +8,7 @@
 // CLI is a built mobi2star binary. --measure also converts BOOK, prints the
 // time and WebAssembly memory, and compares it the same way.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -149,6 +149,8 @@ for (const lang of LANGUAGES) {
   check(isDeepStrictEqual(sorted(TEXT[lang].apps), sorted(choices.apps)), `${lang} apps`);
   check(isDeepStrictEqual(Object.keys(TEXT[lang].fidelity).sort(), fidelities), `${lang} fidelity`);
   check(isDeepStrictEqual(Object.keys(TEXT[lang].stays), choices.stays), `${lang} stays`);
+  const screens = choices.koreader.screens.map((screen) => screen.id);
+  check(isDeepStrictEqual(Object.keys(TEXT[lang].screens), screens), `${lang} screens`);
 }
 check(isDeepStrictEqual(Object.keys(choices.previews).sort(), [...choices.readers].sort()), 'every choice has previews');
 check(format('{a} of {b}', { a: 1, b: 2 }) === '1 of 2', 'format');
@@ -184,6 +186,39 @@ async function previewOf(book, reader) {
   check(followed.outcome === 'view' && followed.scroll_to, 'preview follows and scrolls');
   check(JSON.parse(preview.follow('readest', link, 0)).reason === 'not-followed', 'readest stays');
   check(JSON.parse(preview.suggest('ru', 12)).includes('run'), 'preview suggestions');
+  preview.free();
+}
+// A KOReader page, drawn as the preview worker draws it but with the fonts
+// read from disk.
+{
+  const mupdf = await import(pathToFileURL(join(assets, 'mupdf.js')));
+  const { KoreaderPages } = await import(pathToFileURL(join(assets, 'koreader-page.js')));
+  const fontFiles = [
+    ...JSON.parse(wasm.Preview.koreaderFonts()),
+    wasm.Preview.koreaderFont('undefined', 'TC', false, false),
+    wasm.Preview.koreaderFont('undefined', 'Hebrew', false, false),
+  ];
+  for (const file of fontFiles) check(existsSync(join(assets, file)), `${file} is bundled`);
+  const pages = new KoreaderPages(mupdf, wasm.Preview.koreaderFont, (file) => readFileSync(join(assets, file)));
+  const preview = await previewOf('tests/fixtures/srcs.mobi', 'koreader');
+  const found = JSON.parse(preview.search('koreader', 'run'));
+  const { screens, fontSizes } = choices.koreader;
+  const geometry = JSON.parse(wasm.Preview.koreaderGeometry(screens[0].id, fontSizes.default));
+  const drawn = pages.draw(found.documents[0], geometry, 0);
+  check(drawn.width === geometry.width && drawn.height === geometry.height, 'KOReader page size');
+  check(drawn.pixels.length === drawn.width * drawn.height * 4 && drawn.pixels.some((v) => v < 128), 'KOReader page drawn');
+  check(drawn.text.startsWith('run\n') && drawn.text.includes('(query : run)'), 'KOReader page text');
+  check(pages.fonts.has('NotoSans-Regular.ttf') && pages.fonts.has('NotoSansCJKsc-Regular.otf'), 'KOReader fonts');
+  check(pages.missing.size === 0, 'no font is missing');
+  const hrefs = [...found.documents[0].matchAll(/href="(bword:[^"]+)"/g)].map((match) => match[1]);
+  const uris = drawn.links.map((link) => link.uri);
+  check(drawn.pages === 1 && isDeepStrictEqual(uris, hrefs), 'KOReader page links');
+  check(drawn.links.every((link) => link.label), 'KOReader links have text');
+  const followed = JSON.parse(preview.follow('koreader', uris[0], found.results[0].entry));
+  check(followed.outcome === 'view' && followed.results[0].headword === 'café', 'KOReader follows a link');
+  const small = pages.draw(found.documents[0], JSON.parse(wasm.Preview.koreaderGeometry('phone', fontSizes.max)), 9);
+  check(small.page === small.pages - 1, 'KOReader clamps the page');
+  pages.close();
   preview.free();
 }
 failsWith('MALFORMED', convertWith(new TextEncoder().encode('not a mobi'), '{"reader":"koreader","labels":"en"}'));

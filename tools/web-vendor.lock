@@ -5,7 +5,10 @@
 #
 # MuPDF is the npm build of MuPDF 1.27.0 (KOReader pins 1.27.2), from
 # https://github.com/ArtifexSoftware/mupdf/tree/7956afdc373785865f651fcb76f3112ab1208ba0
-# The fonts are the ones KOReader ships, from koreader-fonts 0469769.
+# The fonts are the ones KOReader ships, from koreader-fonts 0469769: Noto
+# Sans, which its dictionary CSS asks for, and its fallbacks, Noto Sans CJK
+# SC and GNU FreeFont's FreeSerif (GPL, with an exception for documents
+# that embed it).
 #
 # name                        sha256                                                            license            url
 mupdf-1.27.0.tgz              e4b78969319ed148f3110c5cf0158beb851ce72ecf30ef9d0019fe3a41004d78  AGPL-3.0-or-later  https://registry.npmjs.org/mupdf/-/mupdf-1.27.0.tgz
@@ -15,3 +18,5 @@ NotoSans-Italic.ttf           fd0142325f12c857b3443c2390f7f4a697b5c4017fbad4cfd1
 NotoSans-BoldItalic.ttf       4a44bc45d89669b612d00483f01233b43caaef695f1998702126154a37093180  OFL-1.1            https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/noto/NotoSans-BoldItalic.ttf
 NotoSansCJKsc-Regular.otf     1652500938055a232cfbfa321de6ebaadfc5635dd9f75e369bc991d14a6512dd  OFL-1.1            https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/noto/NotoSansCJKsc-Regular.otf
 noto-LICENSE.txt              0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb  OFL-1.1            https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/noto/LICENSE
+FreeSerif.ttf                 ad3968974ad6964dfa55d3741063e60232d51123987e18ecee00c7b1695644e6  GPL-3.0-or-later   https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/freefont/FreeSerif.ttf
+freefont-COPYING.txt          8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903  GPL-3.0-or-later   https://raw.githubusercontent.com/koreader/koreader-fonts/046976988aa33639d60d6ffd25c7a0ff50b72ac0/freefont/COPYING

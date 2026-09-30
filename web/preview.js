@@ -1,6 +1,7 @@
 // The preview panel: search the converted dictionary and follow its links,
-// drawn as the chosen reader draws them. Lookups and link rules run in the
-// preview worker (Rust); this file only draws what comes back.
+// drawn as the chosen reader draws them. Lookups, link rules and, for
+// KOReader, MuPDF run in the preview worker; this file only draws what
+// comes back.
 import { format } from './i18n.js';
 
 /** Frame sizes in CSS pixels: a desktop window, a popup, or a phone. */
@@ -10,6 +11,16 @@ const FRAME_SIZES = {
   'goldendict-mobile': { width: 'min(390px, 100%)', height: '600px' },
   'kobo-pyglossary': { width: 'min(390px, 100%)', height: '600px' },
 };
+
+/**
+ * CSS pixels per device pixel for a KOReader page: a 300 ppi page shows at
+ * about one and a half times its size on the device, and sharp on a
+ * screen with two device pixels per CSS pixel.
+ */
+const PAGE_SCALE = 0.5;
+
+/** A draw that takes longer than this says so. */
+const SLOW_DRAW_MS = 400;
 
 function element(tag, props = {}, children = []) {
   const node = Object.assign(document.createElement(tag), props);
@@ -32,6 +43,10 @@ class FrameView {
     this.ready = new Promise((resolve) => this.frame.addEventListener('load', resolve, { once: true }));
     this.frame.src = new URL('./frame.html', import.meta.url).href;
     this.listening = null;
+  }
+
+  get element() {
+    return this.frame;
   }
 
   size(app) {
@@ -74,6 +89,54 @@ class FrameView {
   }
 }
 
+/**
+ * Draws a page MuPDF drew in the worker (KOReader): the image on a canvas,
+ * a button over each link, and the page's text for screen readers.
+ */
+class PageView {
+  constructor(onLink) {
+    this.onLink = onLink;
+    this.canvas = element('canvas', { className: 'preview-canvas' });
+    this.canvas.setAttribute('aria-hidden', 'true');
+    this.text = element('div', { className: 'visually-hidden' });
+    this.links = element('div', { className: 'preview-links' });
+    this.element = element('div', { className: 'preview-page' }, [this.canvas, this.text, this.links]);
+  }
+
+  show({ width, height, pixels, links, text }) {
+    this.canvas.width = width;
+    this.canvas.height = height;
+    this.canvas.getContext('2d').putImageData(new ImageData(pixels, width, height), 0, 0);
+    this.element.style.width = `min(100%, ${width * PAGE_SCALE}px)`;
+    const percent = (value, whole) => `${(value / whole) * 100}%`;
+    this.links.replaceChildren(
+      ...links.map(({ rect: [x0, y0, x1, y1], uri, label }) => {
+        const link = element('button', { type: 'button', className: 'preview-link' });
+        link.setAttribute('aria-label', label || uri);
+        Object.assign(link.style, {
+          left: percent(x0, width),
+          top: percent(y0, height),
+          width: percent(x1 - x0, width),
+          height: percent(y1 - y0, height),
+        });
+        link.addEventListener('click', () => this.onLink(uri));
+        return link;
+      }),
+    );
+    this.text.textContent = text;
+  }
+}
+
+/** A "‹ label ›" row of two buttons around a label. */
+function stepper(onStep) {
+  const previous = element('button', { type: 'button', className: 'quiet', textContent: '‹' });
+  const next = element('button', { type: 'button', className: 'quiet', textContent: '›' });
+  const label = element('span');
+  previous.addEventListener('click', () => onStep(-1));
+  next.addEventListener('click', () => onStep(1));
+  return { previous, next, label, row: element('div', {}, [previous, label, next]) };
+}
+
 /** One preview: its worker, its history of views and its part of the page. */
 export class PreviewPanel {
   constructor({ container, text, zip, reader }) {
@@ -83,6 +146,7 @@ export class PreviewPanel {
     this.pending = new Map();
     this.nextId = 1;
     this.latest = 0;
+    this.drawing = 0;
     this.worker.onmessage = ({ data }) => {
       const request = this.pending.get(data.id);
       this.pending.delete(data.id);
@@ -96,7 +160,12 @@ export class PreviewPanel {
     this.info = null;
     this.choices = null;
     this.app = null;
+    /** The view shown, which of its results, and (KOReader) which page. */
     this.view = null;
+    this.result = 0;
+    this.page = 0;
+    this.pages = 1;
+    this.fontsMissing = false;
     this.history = [];
     this.status = { key: 'loadingPreview' };
     this.build();
@@ -105,8 +174,10 @@ export class PreviewPanel {
       .then(({ info, choices }) => {
         this.info = info;
         this.choices = choices;
-        this.apps = info.apps.filter((app) => choices.apps[app].engine === 'web');
+        this.apps = info.apps;
         this.app = this.apps[0] ?? null;
+        this.screen = choices.koreader.screens[0].id;
+        this.fontSize = choices.koreader.fontSizes.default;
         this.status = this.app ? null : { key: 'previewUnavailable' };
         this.render();
         if (this.app) this.random();
@@ -122,6 +193,11 @@ export class PreviewPanel {
     });
   }
 
+  /** 'mupdf' or 'web': what draws the current reader. */
+  engine() {
+    return this.app && this.choices?.apps[this.app].engine;
+  }
+
   build() {
     this.title = element('h3');
     this.appLabel = element('label', { htmlFor: 'preview-app' });
@@ -133,6 +209,25 @@ export class PreviewPanel {
       if (this.view) this.search(this.view.query);
     });
     this.appRow = element('div', { className: 'field' }, [this.appLabel, this.appSelect]);
+    this.screenLabel = element('label', { htmlFor: 'preview-screen' });
+    this.screenSelect = element('select', { id: 'preview-screen' });
+    this.screenSelect.addEventListener('change', () => {
+      this.screen = this.screenSelect.value;
+      this.redraw();
+    });
+    this.fontLabel = element('label', { htmlFor: 'preview-font-size' });
+    this.fontInput = element('input', { type: 'number', id: 'preview-font-size', inputMode: 'numeric' });
+    this.fontInput.addEventListener('change', () => {
+      const { min, max } = this.choices.koreader.fontSizes;
+      const size = Math.round(Number(this.fontInput.value));
+      if (Number.isFinite(size)) this.fontSize = Math.min(Math.max(size, min), max);
+      this.fontInput.value = this.fontSize;
+      this.redraw();
+    });
+    this.options = element('div', { className: 'preview-options' }, [
+      element('div', { className: 'field' }, [this.screenLabel, this.screenSelect]),
+      element('div', { className: 'field' }, [this.fontLabel, this.fontInput]),
+    ]);
     this.fidelity = element('p', { className: 'hint' });
     this.input = element('input', { type: 'search', id: 'preview-word', autocomplete: 'off' });
     this.input.setAttribute('list', 'preview-words');
@@ -159,14 +254,20 @@ export class PreviewPanel {
     });
     this.statusLine = element('p', { className: 'hint', role: 'status' });
     this.frameView = new FrameView((href) => this.follow(href));
-    this.stage = element('div', { className: 'preview-stage' }, [this.frameView.frame]);
+    this.pageView = new PageView((href) => this.follow(href));
+    this.stage = element('div', { className: 'preview-stage' }, [this.frameView.element, this.pageView.element]);
+    this.resultTurner = stepper((step) => this.turnResult(step));
+    this.pageTurner = stepper((step) => this.turnPage(step));
+    this.pager = element('div', { className: 'preview-pager' }, [this.resultTurner.row, this.pageTurner.row]);
     this.container.replaceChildren(
       this.title,
       this.appRow,
+      this.options,
       this.fidelity,
       this.form,
       this.statusLine,
       this.stage,
+      this.pager,
     );
   }
 
@@ -174,6 +275,7 @@ export class PreviewPanel {
     const text = this.text();
     const ui = text.ui;
     const appName = this.app ? text.apps[this.app] : '';
+    const paged = this.engine() === 'mupdf';
     this.title.textContent = this.app ? format(ui.previewIn, { app: appName }) : ui.preview;
     const apps = this.apps ?? [];
     this.appRow.hidden = apps.length < 2;
@@ -181,9 +283,28 @@ export class PreviewPanel {
     const selected = this.app;
     this.appSelect.replaceChildren(...apps.map((app) => new Option(text.apps[app], app)));
     if (selected) this.appSelect.value = selected;
+    this.options.hidden = !paged;
+    if (paged) {
+      this.screenLabel.textContent = ui.previewDevice;
+      this.screenSelect.replaceChildren(
+        ...this.choices.koreader.screens.map(({ id, width, height }) =>
+          new Option(format(ui.previewScreen, { name: text.screens[id], width, height }), id),
+        ),
+      );
+      this.screenSelect.value = this.screen;
+      this.fontLabel.textContent = ui.previewFontSize;
+      const { min, max } = this.choices.koreader.fontSizes;
+      Object.assign(this.fontInput, { min, max, value: this.fontSize });
+    }
     const facts = this.app && this.choices?.apps[this.app];
     this.fidelity.textContent = facts
-      ? [text.fidelity[facts.fidelity], facts.resources ? '' : ui.previewNoImages].filter(Boolean).join(' ')
+      ? [
+          text.fidelity[facts.fidelity],
+          facts.resources ? '' : ui.previewNoImages,
+          paged && this.fontsMissing ? ui.previewFontsMissing : '',
+        ]
+          .filter(Boolean)
+          .join(' ')
       : '';
     this.searchLabel.textContent = ui.previewWord;
     this.input.placeholder = ui.previewWord;
@@ -191,12 +312,27 @@ export class PreviewPanel {
     this.randomButton.textContent = ui.randomWord;
     this.backButton.textContent = ui.back;
     this.backButton.disabled = this.history.length === 0;
-    for (const control of [this.input, this.lookUp, this.randomButton, this.appSelect]) {
+    for (const control of [this.input, this.lookUp, this.randomButton, this.appSelect, this.screenSelect, this.fontInput]) {
       control.disabled = !this.app;
     }
     this.statusLine.textContent = this.statusText();
     this.stage.hidden = !this.view;
-    if (this.app) this.frameView.size(this.app);
+    this.frameView.element.hidden = paged;
+    this.pageView.element.hidden = !paged;
+    if (this.app && !paged) this.frameView.size(this.app);
+    const results = this.view?.documents.length ?? 0;
+    this.step(this.resultTurner, ui.previewResult, this.result, results, ui.previousResult, ui.nextResult);
+    this.step(this.pageTurner, ui.previewPage, this.page, paged ? this.pages : 0, ui.previousPage, ui.nextPage);
+    this.pager.hidden = this.stage.hidden || (this.resultTurner.row.hidden && this.pageTurner.row.hidden);
+  }
+
+  step({ previous, next, label, row }, template, index, count, previousName, nextName) {
+    row.hidden = count < 2;
+    label.textContent = format(template, { i: index + 1, n: count });
+    previous.setAttribute('aria-label', previousName);
+    next.setAttribute('aria-label', nextName);
+    previous.disabled = index <= 0;
+    next.disabled = index >= count - 1;
   }
 
   statusText() {
@@ -232,12 +368,15 @@ export class PreviewPanel {
     if (id !== this.latest) return;
     switch (outcome.outcome) {
       case 'view':
-        if (this.view) this.history.push(this.view);
+        if (this.view) this.history.push({ view: this.view, result: this.result, page: this.page });
         this.view = outcome;
+        this.result = 0;
+        this.page = 0;
+        this.pages = 1;
         this.status = null;
         this.input.value = outcome.query;
         this.render();
-        await this.frameView.show(outcome.documents[0], outcome.scroll_to);
+        await this.show(outcome.scroll_to);
         break;
       case 'scroll':
         this.frameView.scroll(outcome.id);
@@ -253,12 +392,74 @@ export class PreviewPanel {
     }
   }
 
+  /** Draws the current result of the current view. */
+  show(scrollTo) {
+    if (this.engine() === 'mupdf') return this.draw();
+    return this.frameView.show(this.view.documents[this.result], scrollTo);
+  }
+
+  /** Has the worker draw the current page with MuPDF. */
+  async draw() {
+    const id = ++this.drawing;
+    const slow = setTimeout(() => {
+      if (id !== this.drawing) return;
+      this.status = { key: 'previewDrawing' };
+      this.render();
+    }, SLOW_DRAW_MS);
+    let drawn;
+    try {
+      drawn = await this.request('draw', {
+        html: this.view.documents[this.result],
+        screen: this.screen,
+        fontSize: this.fontSize,
+        page: this.page,
+      });
+    } catch (error) {
+      if (id === this.drawing) this.fail(error);
+      return;
+    } finally {
+      clearTimeout(slow);
+    }
+    if (id !== this.drawing) return;
+    if (this.status?.key === 'previewDrawing') this.status = null;
+    this.page = drawn.page;
+    this.pages = drawn.pages;
+    this.fontsMissing = drawn.missing.length > 0;
+    this.pageView.show(drawn);
+    this.render();
+  }
+
+  /** Lays the current result out again from its first page. */
+  redraw() {
+    this.page = 0;
+    this.pages = 1;
+    this.render();
+    if (this.view && this.engine() === 'mupdf') this.draw();
+  }
+
+  turnResult(step) {
+    this.result = Math.min(Math.max(this.result + step, 0), this.view.documents.length - 1);
+    this.page = 0;
+    this.pages = 1;
+    this.status = null;
+    this.render();
+    this.show();
+  }
+
+  turnPage(step) {
+    this.page = Math.min(Math.max(this.page + step, 0), this.pages - 1);
+    this.render();
+    this.draw();
+  }
+
   search(word) {
     return this.apply(this.request('search', { app: this.app, word }));
   }
 
   follow(href) {
-    const current = this.view?.results[0]?.entry ?? 0;
+    // Readers that draw one result at a time follow links from that result.
+    const shown = this.view?.documents.length > 1 ? this.result : 0;
+    const current = this.view?.results[shown]?.entry ?? 0;
     return this.apply(this.request('follow', { app: this.app, href, current }));
   }
 
@@ -270,11 +471,12 @@ export class PreviewPanel {
   back() {
     const previous = this.history.pop();
     if (!previous) return;
-    this.view = previous;
+    ({ view: this.view, result: this.result, page: this.page } = previous);
+    this.pages = 1;
     this.status = null;
-    this.input.value = previous.query;
+    this.input.value = this.view.query;
     this.render();
-    this.frameView.show(previous.documents[0], previous.scroll_to);
+    this.show(this.view.scroll_to);
   }
 
   async suggest() {

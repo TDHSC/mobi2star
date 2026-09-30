@@ -7,11 +7,53 @@
 //      { id, type: 'follow', app, href, current }
 //      { id, type: 'suggest', prefix }
 //      { id, type: 'random' }
+//      { id, type: 'draw', html, screen, fontSize, page }  (KOReader)
 // Out: { id, ok: true, value } or { id, ok: false, code, detail }
 import init, { Preview, Source, choices, lastPanic } from './mobi2star.js';
 import { describe, fill } from './worker-common.js';
+import { KoreaderPages } from './koreader-page.js';
 
 let preview = null;
+let koreader = null;
+
+const asset = (file) => new URL(`./${file}`, import.meta.url);
+
+/**
+ * MuPDF and KOReader's fonts, loaded on the first KOReader page. Noto
+ * Sans is fetched up front; a fallback font is fetched when MuPDF asks for
+ * it, synchronously, which only a worker may do.
+ */
+function koreaderPages() {
+  koreader ??= (async () => {
+    const [mupdf, ...fonts] = await Promise.all([
+      import('./mupdf.js'),
+      ...JSON.parse(Preview.koreaderFonts()).map(async (file) => {
+        const response = await fetch(asset(file));
+        if (!response.ok) throw new Error(`LOAD: ${file}: ${response.status}`);
+        return [file, new Uint8Array(await response.arrayBuffer())];
+      }),
+    ]);
+    const fetched = new Map(fonts);
+    return new KoreaderPages(mupdf, Preview.koreaderFont, (file) => {
+      const bytes = fetched.get(file);
+      fetched.delete(file);
+      return bytes ?? fetchNow(file);
+    });
+  })().catch((error) => {
+    koreader = null;
+    throw error;
+  });
+  return koreader;
+}
+
+function fetchNow(file) {
+  const request = new XMLHttpRequest();
+  request.open('GET', asset(file), false);
+  request.responseType = 'arraybuffer';
+  request.send();
+  if (request.status !== 200) throw new Error(`${file}: ${request.status}`);
+  return new Uint8Array(request.response);
+}
 
 const handlers = {
   async open({ zip, reader }) {
@@ -23,11 +65,18 @@ const handlers = {
   follow: ({ app, href, current }) => JSON.parse(preview.follow(app, href, current)),
   suggest: ({ prefix }) => JSON.parse(preview.suggest(prefix, 12)),
   random: () => preview.headwordAt(Math.random()) ?? null,
+  async draw({ html, screen, fontSize, page }) {
+    const pages = await koreaderPages();
+    const geometry = JSON.parse(Preview.koreaderGeometry(screen, fontSize) ?? 'null');
+    if (!geometry) throw new Error(`OPTIONS: unknown screen ${screen}`);
+    return { ...pages.draw(html, geometry, page), missing: [...pages.missing] };
+  },
 };
 
 onmessage = async ({ data }) => {
   try {
-    postMessage({ id: data.id, ok: true, value: await handlers[data.type](data) });
+    const value = await handlers[data.type](data);
+    postMessage({ id: data.id, ok: true, value }, value?.pixels ? [value.pixels.buffer] : []);
   } catch (error) {
     const [code, detail] = describe(error, lastPanic);
     postMessage({ id: data.id, ok: false, code, detail });

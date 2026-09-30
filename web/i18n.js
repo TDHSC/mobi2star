@@ -56,6 +56,17 @@ export const TEXT = {
       previewNoImages: 'Images do not appear: this reader never receives the res/ folder.',
       pageLicense: 'This page, including its preview, is free software under the GNU AGPL 3.0 or later.',
       mupdfSource: 'MuPDF 1.27.0 source',
+      previewDevice: 'Device',
+      previewScreen: '{name} ({width} × {height})',
+      previewFontSize: 'Dictionary font size',
+      previewResult: 'Result {i} of {n}',
+      previousResult: 'Previous result',
+      nextResult: 'Next result',
+      previewPage: 'Page {i} of {n}',
+      previousPage: 'Previous page',
+      nextPage: 'Next page',
+      previewDrawing: 'Drawing the page with MuPDF…',
+      previewFontsMissing: 'Some of KOReader’s fonts could not be loaded, so MuPDF’s own were used.',
     },
     apps: {
       koreader: 'KOReader',
@@ -65,7 +76,7 @@ export const TEXT = {
       'kobo-pyglossary': 'Kobo (made with PyGlossary)',
     },
     fidelity: {
-      'same-engine': 'Drawn by MuPDF, the engine KOReader uses, following KOReader’s own rules. Fonts and sizes also depend on your device’s settings.',
+      'same-engine': 'Drawn by MuPDF, the engine KOReader uses, with KOReader’s own rules and fonts, in the text box of its dictionary popup on the chosen device.',
       'same-rules': 'Follows this reader’s own rules, drawn by your browser; the reader’s own engine may lay it out slightly differently.',
       reported: 'Based on user reports only: this reader’s source code is not public.',
       'engine-unknown': 'Shows exactly what PyGlossary writes; how a Kobo draws it is not known.',
@@ -75,6 +86,13 @@ export const TEXT = {
       'external-link': 'A web link: the reader would open a browser, which the preview does not.',
       'not-followed': 'This reader does not follow links inside dictionary entries.',
       unknown: 'What this reader does with this link is not known.',
+    },
+    screens: {
+      '6in-300ppi': '6-inch e-reader, 300 ppi',
+      '6.8in-300ppi': '6.8-inch e-reader, 300 ppi',
+      '7in-300ppi': '7-inch e-reader, 300 ppi',
+      '10.3in-227ppi': '10.3-inch e-reader, 227 ppi',
+      phone: 'Phone',
     },
     readers: {
       koreader: {
@@ -204,6 +222,17 @@ export const TEXT = {
       previewNoImages: '不显示图片：这个阅读器拿不到 res/ 文件夹。',
       pageLicense: '本页面（含预览功能）是依 GNU AGPL 3.0 或更新版本发布的自由软件。',
       mupdfSource: 'MuPDF 1.27.0 源代码',
+      previewDevice: '设备',
+      previewScreen: '{name}（{width} × {height}）',
+      previewFontSize: '词典字号',
+      previewResult: '第 {i} 个结果，共 {n} 个',
+      previousResult: '上一个结果',
+      nextResult: '下一个结果',
+      previewPage: '第 {i} 页，共 {n} 页',
+      previousPage: '上一页',
+      nextPage: '下一页',
+      previewDrawing: '正在用 MuPDF 绘制页面…',
+      previewFontsMissing: '有些 KOReader 字体没能加载，所以用了 MuPDF 自带的字体。',
     },
     apps: {
       koreader: 'KOReader',
@@ -213,7 +242,7 @@ export const TEXT = {
       'kobo-pyglossary': 'Kobo（用 PyGlossary 制作）',
     },
     fidelity: {
-      'same-engine': '用 KOReader 所用的排版引擎 MuPDF 绘制，并遵循 KOReader 自己的规则。字体和字号还取决于你设备上的设置。',
+      'same-engine': '用 KOReader 所用的排版引擎 MuPDF 绘制，采用 KOReader 自己的规则和字体，排在所选设备上词典弹窗的文字框里。',
       'same-rules': '遵循这个阅读器自己的规则，由你的浏览器绘制；阅读器自身的引擎排版可能略有不同。',
       reported: '仅依据用户反馈：这个阅读器的源代码未公开。',
       'engine-unknown': '完全按 PyGlossary 写出的内容显示；Kobo 设备如何绘制尚不清楚。',
@@ -223,6 +252,13 @@ export const TEXT = {
       'external-link': '这是网页链接：阅读器会打开浏览器，预览不会。',
       'not-followed': '这个阅读器不跟随词条内的链接。',
       unknown: '不清楚这个阅读器会如何处理这个链接。',
+    },
+    screens: {
+      '6in-300ppi': '6 英寸电子阅读器，300 ppi',
+      '6.8in-300ppi': '6.8 英寸电子阅读器，300 ppi',
+      '7in-300ppi': '7 英寸电子阅读器，300 ppi',
+      '10.3in-227ppi': '10.3 英寸电子阅读器，227 ppi',
+      phone: '手机',
     },
     readers: {
       koreader: {

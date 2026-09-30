@@ -41,14 +41,15 @@ rm -rf _site
 assets="_site/v/$version"
 wasm-bindgen --target web --no-typescript --out-dir "$assets" --out-name mobi2star \
   target/wasm32-unknown-unknown/web/mobi2star_web.wasm
-cp web/app.js web/worker.js web/worker-common.js web/preview.js web/preview-worker.js \
+cp web/app.js web/worker.js web/worker-common.js web/preview.js web/preview-worker.js web/koreader-page.js \
   web/frame.html web/i18n.js web/style.css web/icon.svg "$assets/"
 mupdf="$vendor/mupdf-1.27.0.tgz"
 for name in mupdf.js mupdf-wasm.js mupdf-wasm.wasm; do
   tar -xzOf "$mupdf" "package/dist/$name" > "$assets/$name"
 done
 tar -xzOf "$mupdf" package/LICENSE > "$assets/mupdf-LICENSE.txt"
-cp "$vendor"/NotoSans-*.ttf "$vendor/NotoSansCJKsc-Regular.otf" "$vendor/noto-LICENSE.txt" "$assets/"
+cp "$vendor"/NotoSans-*.ttf "$vendor/NotoSansCJKsc-Regular.otf" "$vendor/noto-LICENSE.txt" \
+  "$vendor/FreeSerif.ttf" "$vendor/freefont-COPYING.txt" "$assets/"
 # MuPDF's glue may load nothing but its own WebAssembly (and node:fs in Node).
 if [ "$(grep -c '^import ' "$assets/mupdf.js")" != 1 ] \
   || ! grep -q '^import libmupdf_wasm from "\./mupdf-wasm\.js";$' "$assets/mupdf.js" \

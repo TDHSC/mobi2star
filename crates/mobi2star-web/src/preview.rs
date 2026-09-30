@@ -100,16 +100,15 @@ pub fn koreader_geometry(screen: &str, font_size: u32) -> Option<String> {
     Some(json(&koreader::Geometry::for_screen(
         screen.width,
         screen.height,
-        font_size.clamp(8, 32),
+        font_size.clamp(koreader::FONT_SIZES.min, koreader::FONT_SIZES.max),
     )))
 }
 
-/// The font files KOReader ships for its dictionary popup, the fallback
-/// last, as a JSON list.
+/// The fonts to load before the first KOReader page, as a JSON list: Noto
+/// Sans in its four styles. KOReader's fallbacks are fetched the first time
+/// MuPDF asks for one.
 pub fn koreader_fonts() -> String {
-    let mut fonts: Vec<&str> = koreader::NOTO_SANS.to_vec();
-    fonts.push(koreader::FALLBACK_FONT);
-    json(&fonts)
+    json(&koreader::NOTO_SANS)
 }
 
 #[cfg(test)]
@@ -184,6 +183,6 @@ mod tests {
             serde_json::json!({"width": 854, "height": 517, "em": 36})
         );
         assert!(koreader_geometry("nope", 20).is_none());
-        assert!(koreader_fonts().ends_with("\"NotoSansCJKsc-Regular.otf\"]"));
+        assert!(koreader_fonts().starts_with("[\"NotoSans-Regular.ttf\""));
     }
 }

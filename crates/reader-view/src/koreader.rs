@@ -173,8 +173,19 @@ pub struct Geometry {
     pub em: u32,
 }
 
-/// The default `dict_font_size`.
-pub const DEFAULT_FONT_SIZE: u32 = 20;
+/// The `dict_font_size` setting's range and default
+/// (frontend/apps/reader/modules/readerdictionary.lua).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct FontSizes {
+    pub min: u32,
+    pub max: u32,
+    pub default: u32,
+}
+pub const FONT_SIZES: FontSizes = FontSizes {
+    min: 8,
+    max: 32,
+    default: 20,
+};
 
 impl Geometry {
     /// The normal (not large) popup on a `width`×`height` screen with no DPI
@@ -246,21 +257,49 @@ pub const NOTO_SANS: [&str; 4] = [
     "NotoSans-Bold.ttf",
     "NotoSans-BoldItalic.ttf",
 ];
-/// The fallback KOReader uses for characters Noto Sans lacks.
+/// KOReader's fallbacks for characters the page's fonts lack: Noto Sans
+/// CJK SC for every script, then FreeSerif where MuPDF would try its own
+/// symbol fonts.
 pub const FALLBACK_FONT: &str = "NotoSansCJKsc-Regular.otf";
+pub const LAST_FONT: &str = "FreeSerif.ttf";
 
-/// The font file KOReader would give MuPDF for a request, or `None` to
-/// let MuPDF use its own (the URW fonts KOReader also ships for `serif`,
-/// `sans-serif` and `monospace`).
+/// The scripts Noto Sans CJK SC has characters for, by the names MuPDF's
+/// WebAssembly build asks with.
+const FALLBACK_SCRIPTS: &[&str] = &[
+    "SC",
+    "TC",
+    "JP",
+    "KR",
+    "Latin",
+    "Greek",
+    "Cyrillic",
+    "Common",
+    "Inherited",
+];
+
+/// The font file KOReader's MuPDF would draw with for a request from
+/// MuPDF's WebAssembly build, or `None` to let MuPDF use its own.
+///
+/// That build asks by family with the script "undefined", and for a
+/// fallback by script alone ("TC", "Hebrew", ...). KOReader's MuPDF
+/// (koreader-base thirdparty/mupdf/external_fonts.patch, at koreader
+/// b539d24) maps exactly the family "Noto Sans" to koreader-fonts' files,
+/// other families to the URW fonts MuPDF also builds in, and every
+/// fallback to Noto Sans CJK SC, then FreeSerif. The hook answers one font
+/// per script, so a script the CJK font has no characters for goes
+/// straight to FreeSerif, where KOReader ends up.
 pub fn font_for(family: &str, script: &str, bold: bool, italic: bool) -> Option<&'static str> {
-    if family.eq_ignore_ascii_case("Noto Sans") {
+    if family == "Noto Sans" {
         return Some(NOTO_SANS[usize::from(bold) * 2 + usize::from(italic)]);
     }
-    let latin = script.is_empty()
-        || ["latin", "common", "inherited", "unknown"]
-            .iter()
-            .any(|name| script.eq_ignore_ascii_case(name));
-    (!latin).then_some(FALLBACK_FONT)
+    if !matches!(family, "" | "undefined") || matches!(script, "" | "undefined") {
+        return None;
+    }
+    Some(if FALLBACK_SCRIPTS.contains(&script) {
+        FALLBACK_FONT
+    } else {
+        LAST_FONT
+    })
 }
 
 #[cfg(test)]
@@ -385,21 +424,32 @@ mod tests {
         );
     }
 
+    /// The requests below are the ones MuPDF 1.27.0's WebAssembly build
+    /// makes, recorded in Node.
     #[test]
     fn fonts_are_koreaders() {
         assert_eq!(
-            font_for("Noto Sans", "", false, false),
+            font_for("Noto Sans", "undefined", false, false),
             Some("NotoSans-Regular.ttf")
         );
         assert_eq!(
-            font_for("noto sans", "", true, true),
+            font_for("Noto Sans", "undefined", true, true),
             Some("NotoSans-BoldItalic.ttf")
         );
-        assert_eq!(font_for("serif", "Latin", false, false), None);
-        assert_eq!(font_for("", "Han", false, false), Some(FALLBACK_FONT));
         assert_eq!(
-            font_for("Charis SIL", "Hiragana", true, false),
-            Some(FALLBACK_FONT)
+            font_for("Noto Sans", "undefined", true, false),
+            Some("NotoSans-Bold.ttf")
         );
+        assert_eq!(font_for("noto sans", "undefined", false, false), None);
+        assert_eq!(font_for("serif", "undefined", false, false), None);
+        for script in ["TC", "JP", "KR", "Latin", "Common"] {
+            assert_eq!(
+                font_for("undefined", script, false, false),
+                Some(FALLBACK_FONT)
+            );
+        }
+        for script in ["Arabic", "Thai", "Hebrew", "Devanagari"] {
+            assert_eq!(font_for("undefined", script, true, false), Some(LAST_FONT));
+        }
     }
 }

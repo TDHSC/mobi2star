@@ -111,7 +111,7 @@ fn changed_while_read() -> Failure {
 /// `readers` and `labels` (the choices), `previews` (the readers each
 /// choice is previewed in), `apps` (each previewed reader's facts),
 /// `stays` (why a followed link can leave the view as it is) and
-/// `screens` (KOReader's device presets).
+/// `koreader` (its device presets and dictionary font sizes).
 pub fn choices() -> String {
     let previews: serde_json::Map<String, serde_json::Value> = TargetReader::ALL
         .iter()
@@ -136,7 +136,10 @@ pub fn choices() -> String {
         "previews": previews,
         "apps": apps,
         "stays": reader_view::Stay::ALL,
-        "screens": reader_view::koreader::SCREENS,
+        "koreader": {
+            "screens": reader_view::koreader::SCREENS,
+            "fontSizes": reader_view::koreader::FONT_SIZES,
+        },
     })
     .to_string()
 }
@@ -259,6 +262,7 @@ mod tests {
         assert_eq!(choices["apps"]["koreader"]["engine"], "mupdf");
         assert_eq!(choices["apps"]["readest"]["fidelity"], "same-rules");
         assert_eq!(choices["stays"].as_array().unwrap().len(), 4);
-        assert_eq!(choices["screens"][0]["id"], "6in-300ppi");
+        assert_eq!(choices["koreader"]["screens"][0]["id"], "6in-300ppi");
+        assert_eq!(choices["koreader"]["fontSizes"]["default"], 20);
     }
 }

@@ -220,9 +220,16 @@ a {
   flex-wrap: wrap;
   gap: 8px;
 }
+.preview-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 12px;
+}
 .preview-search input {
   flex: 1 1 12rem;
   min-width: 0;
+}
+.preview input {
   min-height: 44px;
   font: inherit;
   padding: 8px 12px;
@@ -241,6 +248,44 @@ a {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: #fff;
+}
+.preview-page {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}
+.preview-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.preview-links {
+  position: absolute;
+  inset: 0;
+}
+.preview .preview-link {
+  position: absolute;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+}
+.preview .preview-link:hover {
+  outline: 2px solid var(--accent);
+}
+.preview-pager {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 24px;
+}
+.preview-pager > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .visually-hidden {
   position: absolute;
