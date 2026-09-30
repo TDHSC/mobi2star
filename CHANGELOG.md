@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0-alpha.2 — Browser page deployment
+
+- The browser page for 0.6.0-alpha.1 was never deployed: the release's browser test passed, then failed while removing Chrome's temporary profile. This release deploys the page with the preview. The CLI and the page are the same as in 0.6.0-alpha.1 apart from the version.
+
 ## 0.6.0-alpha.1 — Preview in your reader
 
 - New: **Preview** on the browser page. After a conversion, look words up and follow links in the converted dictionary as the chosen reader shows it: KOReader (drawn by MuPDF 1.27.0, the engine KOReader uses, with KOReader's fonts, device presets and dictionary font size), GoldenDict-ng, GoldenDict Mobile, Readest, or a Kobo dictionary made with PyGlossary; `universal` switches among them. Entries are shown sandboxed and cannot run script or load anything. See docs/WEB.md.
