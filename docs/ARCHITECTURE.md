@@ -3,7 +3,9 @@
 ## Dependency direction
 
 ```text
-mobi2star-web (the browser page's converter, WebAssembly bindings)
+mobi2star-web (the browser page's converter and preview, WebAssembly bindings)
+├── reader-view (AGPL: how readers display a dictionary, for the preview)
+│   └── stardict-io, html-preserve, lexicon-core
 └── mobi2star (CLI, dispatch, output trees, transactions, bundle verification)
     ├── mobi-reader ──────────────────────────┐
     ├── srcs-reader → mobi-reader             │
@@ -14,7 +16,7 @@ mobi2star-web (the browser page's converter, WebAssembly bindings)
     └── stardict-io ──────────────────────────┘
 ```
 
-Every lower layer is a reusable library. The CLI owns argument parsing and publication; source readers produce facts, renderers produce bytes, and the StarDict library owns file encoding. All application crates forbid unsafe Rust in their own source. External dependencies retain their separate safety and license boundaries.
+Every lower layer is a reusable library. `reader-view` is AGPL-3.0-or-later because it ports reader behaviour from GoldenDict-ng and KOReader; `tools/qa.sh` fails if the converter ever depends on it, so the CLI and its libraries stay MIT. The CLI owns argument parsing and publication; source readers produce facts, renderers produce bytes, and the StarDict library owns file encoding. All application crates forbid unsafe Rust in their own source. External dependencies retain their separate safety and license boundaries.
 
 ## Shared MOBI foundation
 

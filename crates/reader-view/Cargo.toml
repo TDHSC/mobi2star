@@ -1,0 +1,25 @@
+[package]
+name = "reader-view"
+description = "How dictionary readers display a StarDict dictionary, for previews"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# Not the workspace's MIT: this crate ports behaviour from GoldenDict-ng
+# (GPL-3.0) and KOReader (AGPL-3.0). tools/qa.sh keeps the CLI free of it.
+license = "AGPL-3.0-or-later"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+lexicon-core.workspace = true
+stardict-io.workspace = true
+html-preserve.workspace = true
+serde.workspace = true
+unicode-normalization.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+mobi2star.workspace = true
+serde_json.workspace = true

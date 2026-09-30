@@ -28,6 +28,7 @@ encoding_rs = "=0.8.35"
 clap = { version = "=4.5.32", features = ["derive"] }
 tempfile = "=3.19.1"
 mobi2star = { path = "crates/mobi2star" }
+reader-view = { path = "crates/reader-view" }
 # The browser build only. tools/build-web.sh needs wasm-bindgen-cli of
 # exactly this version, because the generated JS glue must match.
 wasm-bindgen = "=0.2.129"
