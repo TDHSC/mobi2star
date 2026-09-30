@@ -42,6 +42,21 @@ pub fn vint(data: &[u8], cursor: &mut usize) -> Result<u32> {
     Err(Error::Malformed("unterminated variable integer".into()))
 }
 
+/// The raster format that `bytes` start with: extension and media type.
+pub fn image_type(bytes: &[u8]) -> Option<(&'static str, &'static str)> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some(("png", "image/png"))
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        Some(("jpg", "image/jpeg"))
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some(("gif", "image/gif"))
+    } else if bytes.starts_with(b"BM") {
+        Some(("bmp", "image/bmp"))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

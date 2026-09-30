@@ -5,6 +5,7 @@ use crate::{
     index::Index,
     pdb::PalmDatabase,
 };
+pub use lexicon_core::bytes::image_type;
 use lexicon_core::{bytes::be32, Encoding, Error, Limits, Resource, Result};
 use serde::Serialize;
 
@@ -102,19 +103,6 @@ impl<'a> Container<'a> {
             }
         }
         Ok(result)
-    }
-}
-pub fn image_type(bytes: &[u8]) -> Option<(&'static str, &'static str)> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Some(("png", "image/png"))
-    } else if bytes.starts_with(b"\xff\xd8\xff") {
-        Some(("jpg", "image/jpeg"))
-    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        Some(("gif", "image/gif"))
-    } else if bytes.starts_with(b"BM") {
-        Some(("bmp", "image/bmp"))
-    } else {
-        None
     }
 }
 pub fn decode_text(

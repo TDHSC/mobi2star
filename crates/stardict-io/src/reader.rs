@@ -16,6 +16,8 @@ pub struct ParsedDictionary {
     pub synonyms: Vec<Synonym>,
     pub offset_bits: u8,
     pub dictionary_bytes: u64,
+    /// The `.ifo` `bookname`, which readers show as the dictionary's name.
+    pub bookname: String,
 }
 impl ParsedDictionary {
     /// Exact source spelling. Return every distinct destination, not just the first homograph.
@@ -217,6 +219,7 @@ pub fn parse(
         synonyms,
         offset_bits: bits as u8,
         dictionary_bytes,
+        bookname: fields.get("bookname").copied().unwrap_or_default().into(),
     })
 }
 /// Reads one payload from a `.dict` file or any other seekable source.

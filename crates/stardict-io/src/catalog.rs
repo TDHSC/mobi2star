@@ -351,6 +351,7 @@ mod tests {
         let parsed =
             crate::parse(&encoded.ifo, &encoded.idx, &encoded.syn, length, &limits).unwrap();
         assert_eq!(parsed, crate::open(dir.path(), &limits).unwrap());
+        assert_eq!(parsed.bookname, "Test");
     }
     #[test]
     fn payload_check_reads_the_stream_once_and_catches_changes() {
