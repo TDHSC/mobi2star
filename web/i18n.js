@@ -170,6 +170,12 @@ export const TEXT = {
       LOAD: 'The converter could not be loaded. If this page was open while a new version was published, reload it and try again.',
       OTHER: 'The conversion failed.',
     },
+    previewErrors: {
+      LIMIT: 'This dictionary is too large to preview in a browser.',
+      CRASH: 'The preview stopped unexpectedly, most likely because it ran out of memory.',
+      LOAD: 'Part of the preview could not be loaded. If this page was open while a new version was published, reload it and try again.',
+      OTHER: 'The preview could not read this part of the dictionary.',
+    },
   },
   zh: {
     ui: {
@@ -335,6 +341,12 @@ export const TEXT = {
       CRASH: '转换器意外停止，很可能是内存不足。',
       LOAD: '无法加载转换器。如果在新版本发布时这个页面一直开着，请刷新后重试。',
       OTHER: '转换失败。',
+    },
+    previewErrors: {
+      LIMIT: '这个词典太大，无法在浏览器中预览。',
+      CRASH: '预览意外停止，很可能是内存不足。',
+      LOAD: '预览的部分内容无法加载。如果在新版本发布时这个页面一直开着，请刷新后重试。',
+      OTHER: '预览无法读取词典的这一部分。',
     },
   },
 };

@@ -29,6 +29,25 @@ const XLINK = 'http://www.w3.org/1999/xlink';
 /** A draw that takes longer than this says so. */
 const SLOW_DRAW_MS = 400;
 
+/** How many views Back can return to. */
+const HISTORY_LIMIT = 50;
+
+/** The error codes whose preview text is their own; others read as OTHER. */
+const PREVIEW_ERRORS = ['LIMIT', 'CRASH', 'LOAD'];
+
+/** The options each select was last given, so unchanged ones stay open. */
+const shownOptions = new WeakMap();
+
+/** Gives `select` these [value, label] options and selects `value`. */
+function setOptions(select, options, value) {
+  const key = JSON.stringify(options);
+  if (shownOptions.get(select) !== key) {
+    select.replaceChildren(...options.map(([optionValue, label]) => new Option(label, optionValue)));
+    shownOptions.set(select, key);
+  }
+  if (value != null && select.value !== value) select.value = value;
+}
+
 function element(tag, props = {}, children = []) {
   const node = Object.assign(document.createElement(tag), props);
   node.append(...children);
@@ -178,6 +197,8 @@ export class PreviewPanel {
     this.page = 0;
     this.pages = 1;
     this.fontsMissing = false;
+    /** A draw has taken longer than SLOW_DRAW_MS. */
+    this.slow = false;
     this.history = [];
     this.status = { key: 'loadingPreview' };
     this.build();
@@ -228,10 +249,15 @@ export class PreviewPanel {
     this.appLabel = element('label', { htmlFor: 'preview-app' });
     this.appSelect = element('select', { id: 'preview-app' });
     this.appSelect.addEventListener('change', () => {
+      // The new reader looks the same query up; until it answers, and if it
+      // finds nothing, nothing of the previous reader stays on screen.
+      const previous = this.view;
       this.app = this.appSelect.value;
-      this.history = [];
+      this.clearView();
       this.render();
-      if (this.view) this.search(this.view.query);
+      if (previous) {
+        this.search(previous.query, { followed: previous.followed, label: this.word(previous) });
+      }
     });
     this.appRow = element('div', { className: 'field' }, [this.appLabel, this.appSelect]);
     this.screenLabel = element('label', { htmlFor: 'preview-screen' });
@@ -305,21 +331,29 @@ export class PreviewPanel {
     const apps = this.apps ?? [];
     this.appRow.hidden = apps.length < 2;
     this.appLabel.textContent = ui.previewAs;
-    const selected = this.app;
-    this.appSelect.replaceChildren(...apps.map((app) => new Option(text.apps[app], app)));
-    if (selected) this.appSelect.value = selected;
+    setOptions(
+      this.appSelect,
+      apps.map((app) => [app, text.apps[app]]),
+      this.app,
+    );
     this.options.hidden = !paged;
     if (paged) {
       this.screenLabel.textContent = ui.previewDevice;
-      this.screenSelect.replaceChildren(
-        ...this.choices.koreader.screens.map(({ id, width, height }) =>
-          new Option(format(ui.previewScreen, { name: text.screens[id], width, height }), id),
-        ),
+      setOptions(
+        this.screenSelect,
+        this.choices.koreader.screens.map(({ id, width, height }) => [
+          id,
+          format(ui.previewScreen, { name: text.screens[id], width, height }),
+        ]),
+        this.screen,
       );
-      this.screenSelect.value = this.screen;
       this.fontLabel.textContent = ui.previewFontSize;
       const { min, max } = this.choices.koreader.fontSizes;
-      Object.assign(this.fontInput, { min, max, value: this.fontSize });
+      Object.assign(this.fontInput, { min, max });
+      // Leave a size being typed alone.
+      if (this.fontInput.ownerDocument.activeElement !== this.fontInput) {
+        this.fontInput.value = this.fontSize;
+      }
     }
     const facts = this.app && this.choices?.apps[this.app];
     this.fidelity.textContent = facts
@@ -362,6 +396,13 @@ export class PreviewPanel {
 
   statusText() {
     const text = this.text();
+    if (this.slow) return text.ui.previewDrawing;
+    if (this.status?.key === 'previewFailed') {
+      const { code, detail } = this.status;
+      const reason = text.previewErrors[PREVIEW_ERRORS.includes(code) ? code : 'OTHER'];
+      const details = detail && !PREVIEW_ERRORS.includes(code) ? format(text.ui.errorDetail, { detail }) : '';
+      return [text.ui.previewFailed, reason, details].filter(Boolean).join(' ');
+    }
     if (this.status) {
       const { key, values = {} } = this.status;
       const template = key.startsWith('stays.') ? text.stays[key.slice(6)] : text.ui[key];
@@ -375,10 +416,25 @@ export class PreviewPanel {
   }
 
   fail(error) {
-    const errors = this.text().errors;
-    this.status = { key: 'previewFailed' };
+    this.status = { key: 'previewFailed', code: error.code, detail: error.detail };
     this.render();
-    this.statusLine.textContent = `${this.statusText()} ${errors[error.code] ?? errors.OTHER}`;
+  }
+
+  /** Forgets the view and the way back to it, and any draw for it. */
+  clearView() {
+    this.view = null;
+    this.history = [];
+    this.result = 0;
+    this.page = 0;
+    this.pages = 1;
+    this.status = null;
+    this.cancelDraw();
+  }
+
+  /** Makes a pending draw's answer, and its slow notice, count for nothing. */
+  cancelDraw() {
+    this.drawing++;
+    this.slow = false;
   }
 
   /**
@@ -389,7 +445,12 @@ export class PreviewPanel {
     return view.followed ? (view.results[0]?.headword ?? view.query) : view.query;
   }
 
-  async apply(promise, followed = false) {
+  /**
+   * Shows what a lookup or a followed link leads to. `followed`: the query
+   * is a link's target, so the box shows the headword found. `label`: the
+   * word to name if nothing is found, when not the query itself.
+   */
+  async apply(promise, { followed = false, label } = {}) {
     const id = ++this.latest;
     let outcome;
     try {
@@ -401,7 +462,10 @@ export class PreviewPanel {
     if (id !== this.latest) return;
     switch (outcome.outcome) {
       case 'view':
-        if (this.view) this.history.push({ view: this.view, result: this.result, page: this.page });
+        if (this.view) {
+          this.history.push({ view: this.view, result: this.result, page: this.page });
+          if (this.history.length > HISTORY_LIMIT) this.history.shift();
+        }
         this.view = { ...outcome, followed };
         this.result = 0;
         this.page = 0;
@@ -419,7 +483,7 @@ export class PreviewPanel {
         this.render();
         break;
       case 'not-found':
-        this.status = { key: 'previewNotFound', values: { word: outcome.word } };
+        this.status = { key: 'previewNotFound', values: { word: label ?? outcome.word } };
         this.render();
         break;
     }
@@ -428,15 +492,17 @@ export class PreviewPanel {
   /** Draws the current result of the current view. */
   show(scrollTo) {
     if (this.oneAtATime(this.view)) return this.draw();
+    this.cancelDraw();
     return this.frameView.show(this.view.documents[0], scrollTo);
   }
 
   /** Has the worker draw the current page with MuPDF. */
   async draw() {
-    const id = ++this.drawing;
+    this.cancelDraw();
+    const id = this.drawing;
     const slow = setTimeout(() => {
       if (id !== this.drawing) return;
-      this.status = { key: 'previewDrawing' };
+      this.slow = true;
       this.render();
     }, SLOW_DRAW_MS);
     let drawn;
@@ -450,13 +516,16 @@ export class PreviewPanel {
         page: this.page,
       });
     } catch (error) {
-      if (id === this.drawing) this.fail(error);
+      if (id === this.drawing) {
+        this.slow = false;
+        this.fail(error);
+      }
       return;
     } finally {
       clearTimeout(slow);
     }
     if (id !== this.drawing) return;
-    if (this.status?.key === 'previewDrawing') this.status = null;
+    this.slow = false;
     this.page = drawn.page;
     this.pages = drawn.pages;
     this.fontsMissing = drawn.missing.length > 0;
@@ -468,6 +537,7 @@ export class PreviewPanel {
   redraw() {
     this.page = 0;
     this.pages = 1;
+    this.status = null;
     this.render();
     if (this.view && this.oneAtATime(this.view)) this.draw();
   }
@@ -483,19 +553,20 @@ export class PreviewPanel {
 
   turnPage(step) {
     this.page = Math.min(Math.max(this.page + step, 0), this.pages - 1);
+    this.status = null;
     this.render();
     this.draw();
   }
 
-  search(word) {
-    return this.apply(this.request('search', { app: this.app, word }));
+  search(word, options) {
+    return this.apply(this.request('search', { app: this.app, word }), options);
   }
 
   follow(href) {
     // Readers that draw one result at a time follow links from that result.
     const shown = this.view && this.oneAtATime(this.view) ? this.result : 0;
     const current = this.view?.results[shown]?.entry ?? 0;
-    return this.apply(this.request('follow', { app: this.app, href, current }), true);
+    return this.apply(this.request('follow', { app: this.app, href, current }), { followed: true });
   }
 
   async random() {
