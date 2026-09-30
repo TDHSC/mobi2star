@@ -98,7 +98,19 @@ pub fn document(dictionary: &Dictionary, entry: usize, query: Option<&str>) -> R
     )))
 }
 
+/// The document for result `n` of a lookup of `query`: the first result
+/// carries the query line (`addQueryWordToResult`).
+pub fn result_document(
+    dictionary: &Dictionary,
+    query: &str,
+    entry: usize,
+    n: usize,
+) -> Result<String> {
+    document(dictionary, entry, (n == 0).then_some(query))
+}
+
 /// `startSdcv`: the word, then its lowercase form, each looked up exactly.
+/// The view carries no documents; see `result_document`.
 pub fn search(dictionary: &Dictionary, word: &str) -> Result<Outcome> {
     let mut hits = dictionary.lookup_exact(word);
     let lowercase = word.to_lowercase();
@@ -121,16 +133,11 @@ pub fn search(dictionary: &Dictionary, word: &str) -> Result<Outcome> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let documents = hits
-        .iter()
-        .enumerate()
-        .map(|(n, &entry)| document(dictionary, entry, (n == 0).then_some(word)))
-        .collect::<Result<_>>()?;
     Ok(Outcome::View(View {
         app: App::Koreader,
         query: word.into(),
         results,
-        documents,
+        documents: Vec::new(),
         scroll_to: None,
     }))
 }
@@ -382,9 +389,10 @@ mod tests {
         };
         let words: Vec<_> = view.results.iter().map(|m| m.headword.as_str()).collect();
         assert_eq!(words, ["Run", "run"]);
-        assert_eq!(view.documents.len(), 2);
-        assert!(view.documents[0].contains("(query : Run)"));
-        assert!(!view.documents[1].contains("(query"));
+        assert!(view.documents.is_empty());
+        let result = |n: usize| result_document(&d, &view.query, view.results[n].entry, n).unwrap();
+        assert!(result(0).contains("(query : Run)"));
+        assert!(!result(1).contains("(query"));
         assert!(matches!(search(&d, "RUN").unwrap(), Outcome::View(v) if v.results.len() == 1));
         assert!(matches!(
             search(&d, "fly").unwrap(),

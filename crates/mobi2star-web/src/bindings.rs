@@ -131,6 +131,15 @@ impl Preview {
     pub fn suggest(&self, prefix: &str, limit: usize) -> String {
         self.0.suggest(prefix, limit)
     }
+    #[wasm_bindgen(js_name = koreaderDocument)]
+    pub fn koreader_document(
+        &self,
+        query: &str,
+        entry: usize,
+        n: usize,
+    ) -> Result<String, JsError> {
+        self.0.koreader_document(query, entry, n).map_err(thrown)
+    }
     #[wasm_bindgen(js_name = headwordAt)]
     pub fn headword_at(&self, fraction: f64) -> Option<String> {
         self.0.headword_at(fraction)

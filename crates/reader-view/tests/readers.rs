@@ -2,7 +2,7 @@
 //! dictionaries the converter actually produces.
 use lexicon_core::{Limits, TargetReader};
 use mobi2star::{Backend, OutputOptions};
-use reader_view::{App, Dictionary, Outcome, View};
+use reader_view::{koreader, App, Dictionary, Outcome, View};
 
 const SRCS: &[u8] = include_bytes!("../../../tests/fixtures/srcs.mobi");
 const COMPILED: &[u8] = include_bytes!("../../../tests/fixtures/uncompressed.mobi");
@@ -49,7 +49,12 @@ fn each_choice_styles_its_readers_in_the_preview() {
             let class = scope_class(&d);
             for &app in App::for_target(target) {
                 let found = view(reader_view::search(&d, app, "run").unwrap());
-                let document = &found.documents[0];
+                let document = match app {
+                    App::Koreader => {
+                        koreader::result_document(&d, "run", found.results[0].entry, 0).unwrap()
+                    }
+                    _ => found.documents[0].clone(),
+                };
                 let styled = document
                     .split("<style>")
                     .skip(1)

@@ -21,8 +21,9 @@ pub struct View {
     pub query: String,
     /// The matches, in the reader's order.
     pub results: Vec<Match>,
-    /// The documents the engine draws: one per result for readers that
-    /// show one result at a time (KOReader), otherwise one for all.
+    /// The document a web engine draws, holding every result. Empty for
+    /// KOReader, which shows one result at a time: `koreader::result_document`
+    /// composes each when it is shown.
     pub documents: Vec<String>,
     /// An element id to scroll to once drawn.
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -202,25 +202,27 @@ async function previewOf(book, reader) {
   const pages = new KoreaderPages(mupdf, wasm.Preview, (file) => readFileSync(join(assets, file)));
   const preview = await previewOf('tests/fixtures/srcs.mobi', 'koreader');
   const found = JSON.parse(preview.search('koreader', 'run'));
+  check(found.documents.length === 0, 'KOReader results are composed on demand');
+  const first = preview.koreaderDocument('run', found.results[0].entry, 0);
   const { screens, fontSizes } = choices.koreader;
   const geometry = JSON.parse(wasm.Preview.koreaderGeometry(screens[0].id, fontSizes.default));
-  const drawn = pages.draw(found.documents[0], geometry, 0);
+  const drawn = pages.draw(first, geometry, 0);
   check(drawn.width === geometry.width && drawn.height === geometry.height, 'KOReader page size');
   check(drawn.pixels.length === drawn.width * drawn.height * 4 && drawn.pixels.some((v) => v < 128), 'KOReader page drawn');
   check(drawn.text.startsWith('run\n') && drawn.text.includes('(query : run)'), 'KOReader page text');
   check(pages.fonts.has('NotoSans-Regular.ttf') && pages.fonts.has('NotoSansCJKsc-Regular.otf'), 'KOReader fonts');
   check(pages.missing.size === 0, 'no font is missing');
-  const hrefs = [...found.documents[0].matchAll(/href="(bword:[^"]+)"/g)].map((match) => match[1]);
+  const hrefs = [...first.matchAll(/href="(bword:[^"]+)"/g)].map((match) => match[1]);
   const uris = drawn.links.map((link) => link.uri);
   check(drawn.pages === 1 && isDeepStrictEqual(uris, hrefs), 'KOReader page links');
   check(drawn.links.every((link) => link.label), 'KOReader links have text');
   const followed = JSON.parse(preview.follow('koreader', uris[0], found.results[0].entry));
   check(followed.outcome === 'view' && followed.results[0].headword === 'café', 'KOReader follows a link');
-  const small = pages.draw(found.documents[0], JSON.parse(wasm.Preview.koreaderGeometry('phone', fontSizes.max)), 9);
+  const small = pages.draw(first, JSON.parse(wasm.Preview.koreaderGeometry('phone', fontSizes.max)), 9);
   check(small.page === small.pages - 1, 'KOReader clamps the page');
   // U+25B8 is in neither Noto Sans nor Noto Sans CJK SC: KOReader draws it
   // with FreeSerif.
-  const symbol = found.documents[0].replace('<body>', '<body><p>\u25b8 bunch up</p>');
+  const symbol = first.replace('<body>', '<body><p>\u25b8 bunch up</p>');
   pages.draw(symbol, geometry, 0);
   check(pages.fonts.has(wasm.Preview.koreaderLastFont()), 'the last font draws what no other font has');
   const drawnWith = new Map();

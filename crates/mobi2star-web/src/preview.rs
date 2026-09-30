@@ -76,6 +76,18 @@ impl Session {
             .map_err(failure)?;
         Ok(json(&outcome))
     }
+    /// KOReader's document for result `n`, entry `entry`, of a lookup of
+    /// `query`. KOReader's views carry none, so that only the result on
+    /// screen is composed and nothing large crosses to the page.
+    pub fn koreader_document(
+        &self,
+        query: &str,
+        entry: usize,
+        n: usize,
+    ) -> Result<String, Failure> {
+        self.app("koreader")?;
+        koreader::result_document(&self.dictionary, query, entry, n).map_err(failure)
+    }
     /// Search suggestions for `prefix`, as a JSON list.
     pub fn suggest(&self, prefix: &str, limit: usize) -> String {
         json(&self.dictionary.suggest(prefix, limit))
@@ -140,6 +152,16 @@ mod tests {
             serde_json::from_str(&s.search("koreader", "run").unwrap()).unwrap();
         assert_eq!(found["outcome"], "view");
         assert_eq!(found["results"].as_array().unwrap().len(), 2);
+        assert_eq!(found["documents"], serde_json::json!([]));
+        let second = found["results"][1]["entry"].as_u64().unwrap() as usize;
+        assert!(s
+            .koreader_document("run", second, 0)
+            .unwrap()
+            .contains("(query : run)"));
+        assert!(!s
+            .koreader_document("run", second, 1)
+            .unwrap()
+            .contains("(query"));
         let missing: serde_json::Value =
             serde_json::from_str(&s.search("readest", "fly").unwrap()).unwrap();
         assert_eq!(
@@ -162,6 +184,10 @@ mod tests {
     fn only_the_choices_readers_are_previewed() {
         let s = session("readest");
         assert_eq!(s.search("koreader", "run").unwrap_err().code, "OPTIONS");
+        assert_eq!(
+            s.koreader_document("run", 0, 0).unwrap_err().code,
+            "OPTIONS"
+        );
         assert_eq!(s.search("kindle", "run").unwrap_err().code, "OPTIONS");
         assert!(s.search("readest", "run").is_ok());
         assert_eq!(

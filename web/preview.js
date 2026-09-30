@@ -198,6 +198,19 @@ export class PreviewPanel {
     return this.app && this.choices?.apps[this.app].engine;
   }
 
+  /**
+   * Whether `view` is drawn one result at a time (KOReader, whose results
+   * the worker composes and draws on demand) rather than as one document.
+   */
+  oneAtATime(view) {
+    return this.choices.apps[view.app].engine === 'mupdf';
+  }
+
+  /** How many results of the view can be stepped through. */
+  steps(view) {
+    return this.oneAtATime(view) ? view.results.length : 1;
+  }
+
   build() {
     this.title = element('h3');
     this.appLabel = element('label', { htmlFor: 'preview-app' });
@@ -320,7 +333,7 @@ export class PreviewPanel {
     this.frameView.element.hidden = paged;
     this.pageView.element.hidden = !paged;
     if (this.app && !paged) this.frameView.size(this.app);
-    const results = this.view?.documents.length ?? 0;
+    const results = this.view ? this.steps(this.view) : 0;
     this.step(this.resultTurner, ui.previewResult, this.result, results, ui.previousResult, ui.nextResult);
     this.step(this.pageTurner, ui.previewPage, this.page, paged ? this.pages : 0, ui.previousPage, ui.nextPage);
     this.pager.hidden = this.stage.hidden || (this.resultTurner.row.hidden && this.pageTurner.row.hidden);
@@ -402,8 +415,8 @@ export class PreviewPanel {
 
   /** Draws the current result of the current view. */
   show(scrollTo) {
-    if (this.engine() === 'mupdf') return this.draw();
-    return this.frameView.show(this.view.documents[this.result], scrollTo);
+    if (this.oneAtATime(this.view)) return this.draw();
+    return this.frameView.show(this.view.documents[0], scrollTo);
   }
 
   /** Has the worker draw the current page with MuPDF. */
@@ -417,7 +430,9 @@ export class PreviewPanel {
     let drawn;
     try {
       drawn = await this.request('draw', {
-        html: this.view.documents[this.result],
+        query: this.view.query,
+        entry: this.view.results[this.result].entry,
+        n: this.result,
         screen: this.screen,
         fontSize: this.fontSize,
         page: this.page,
@@ -442,11 +457,11 @@ export class PreviewPanel {
     this.page = 0;
     this.pages = 1;
     this.render();
-    if (this.view && this.engine() === 'mupdf') this.draw();
+    if (this.view && this.oneAtATime(this.view)) this.draw();
   }
 
   turnResult(step) {
-    this.result = Math.min(Math.max(this.result + step, 0), this.view.documents.length - 1);
+    this.result = Math.min(Math.max(this.result + step, 0), this.steps(this.view) - 1);
     this.page = 0;
     this.pages = 1;
     this.status = null;
@@ -466,7 +481,7 @@ export class PreviewPanel {
 
   follow(href) {
     // Readers that draw one result at a time follow links from that result.
-    const shown = this.view?.documents.length > 1 ? this.result : 0;
+    const shown = this.view && this.oneAtATime(this.view) ? this.result : 0;
     const current = this.view?.results[shown]?.entry ?? 0;
     return this.apply(this.request('follow', { app: this.app, href, current }), true);
   }

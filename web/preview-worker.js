@@ -7,7 +7,8 @@
 //      { id, type: 'follow', app, href, current }
 //      { id, type: 'suggest', prefix }
 //      { id, type: 'random' }
-//      { id, type: 'draw', html, screen, fontSize, page }  (KOReader)
+//      { id, type: 'draw', query, entry, n, screen, fontSize, page }
+//        (KOReader: page `page` of result `n`, entry `entry`, of `query`)
 // Out: { id, ok: true, value } or { id, ok: false, code, detail }
 import init, { Preview, Source, choices, lastPanic } from './mobi2star.js';
 import { describe, fill } from './worker-common.js';
@@ -15,6 +16,8 @@ import { KoreaderPages } from './koreader-page.js';
 
 let preview = null;
 let koreader = null;
+/** The KOReader document last composed, so turning pages reuses it. */
+let composed = { key: null, html: null };
 
 const asset = (file) => new URL(`./${file}`, import.meta.url);
 
@@ -65,8 +68,11 @@ const handlers = {
   follow: ({ app, href, current }) => JSON.parse(preview.follow(app, href, current)),
   suggest: ({ prefix }) => JSON.parse(preview.suggest(prefix, 12)),
   random: () => preview.headwordAt(Math.random()) ?? null,
-  async draw({ html, screen, fontSize, page }) {
+  async draw({ query, entry, n, screen, fontSize, page }) {
     const pages = await koreaderPages();
+    const key = JSON.stringify([entry, n === 0 ? query : null]);
+    if (composed.key !== key) composed = { key, html: preview.koreaderDocument(query, entry, n) };
+    const { html } = composed;
     const geometry = JSON.parse(Preview.koreaderGeometry(screen, fontSize) ?? 'null');
     if (!geometry) throw new Error(`OPTIONS: unknown screen ${screen}`);
     return { ...pages.draw(html, geometry, page), missing: [...pages.missing] };
