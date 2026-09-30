@@ -22,3 +22,21 @@ impl Default for OutputOptions {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::ValueEnum;
+    use lexicon_core::{LabelLanguage, TargetReader};
+    #[test]
+    fn cli_values_are_the_manifest_spellings() {
+        assert_eq!(TargetReader::value_variants(), TargetReader::ALL);
+        for reader in TargetReader::ALL {
+            let cli = reader.to_possible_value().unwrap();
+            assert_eq!(serde_json::to_value(reader).unwrap(), cli.get_name());
+        }
+        for labels in LabelLanguage::value_variants() {
+            let cli = labels.to_possible_value().unwrap();
+            assert_eq!(serde_json::to_value(labels).unwrap(), cli.get_name());
+        }
+    }
+}

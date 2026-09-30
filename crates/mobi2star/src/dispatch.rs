@@ -3,11 +3,14 @@
 use crate::OutputOptions;
 use lexicon_core::{checked_member, read_bounded, Limits, Result};
 use std::path::{Path, PathBuf};
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum Backend {
+    /// The embedded publisher source when the MOBI has one, else the compiled text
     #[default]
     Auto,
+    /// The embedded publisher source (SRCS record)
     Srcs,
+    /// The compiled MOBI text
     Compiled,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]

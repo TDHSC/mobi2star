@@ -14,3 +14,8 @@ serde_json.workspace = true
 thiserror.workspace = true
 sha2.workspace = true
 encoding_rs.workspace = true
+clap = { workspace = true, optional = true }
+
+[features]
+# Lets command-line front ends take output choices as clap value enums.
+clap = ["dep:clap"]

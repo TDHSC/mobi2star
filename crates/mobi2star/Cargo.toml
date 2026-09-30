@@ -11,7 +11,7 @@ workspace = true
 [dependencies]
 srcs-reader.workspace = true
 srcs-render.workspace = true
-lexicon-core.workspace = true
+lexicon-core = { workspace = true, features = ["clap"] }
 mobi-reader.workspace = true
 html-preserve.workspace = true
 stardict-io.workspace = true

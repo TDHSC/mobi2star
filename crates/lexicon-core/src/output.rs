@@ -3,37 +3,41 @@
 //! the stylesheet files live.
 use serde::{Deserialize, Serialize};
 
-/// The reader a dictionary is built for. Readers differ in how they load a
-/// dictionary stylesheet; see docs/READERS.md for the evidence behind each.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TargetReader {
-    /// Loads the `.ifo`-named stylesheet; ignores `<style>` inside entries.
+/// Defines `TargetReader` and `TargetReader::ALL` from one list, so the list
+/// can never miss a variant.
+macro_rules! target_readers {
+    ($($(#[$attr:meta])* $variant:ident,)+) => {
+        /// The reader a dictionary is built for. Readers differ in how they
+        /// load a dictionary stylesheet; see docs/READERS.md for the evidence.
+        #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+        #[serde(rename_all = "kebab-case")]
+        pub enum TargetReader {
+            $($(#[$attr])* $variant,)+
+        }
+        impl TargetReader {
+            /// Every reader, in declaration order.
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+        }
+    };
+}
+target_readers! {
+    /// KOReader, also fine for GoldenDict desktop: a hidden link to res/dictionary.css; KOReader itself loads dictionary.css
     #[default]
     Koreader,
-    /// GoldenDict / GoldenDict-ng desktop: loads linked `res/` stylesheets,
-    /// scoped to the dictionary.
+    /// GoldenDict and GoldenDict-ng desktop, SilverDict: same output as koreader
     Goldendict,
-    /// Applies only stylesheets inside each entry.
+    /// GoldenDict Mobile (Android): a stylesheet copy inside every entry
     GoldendictMobile,
-    /// Applies only stylesheets inside each entry.
+    /// Readest: a stylesheet copy inside every entry
     Readest,
-    /// For conversion to Kobo with PyGlossary or penelope, which keep only
-    /// stylesheets inside each entry.
+    /// Converting to Kobo with PyGlossary or penelope: a stylesheet copy inside every entry
     Kobo,
-    /// Link and inline copy, for mixed or untested readers.
+    /// Several or untested readers (e.g. Boox): link and inline copy, largest output
     Universal,
 }
 
 impl TargetReader {
-    pub const ALL: [Self; 6] = [
-        Self::Koreader,
-        Self::Goldendict,
-        Self::GoldendictMobile,
-        Self::Readest,
-        Self::Kobo,
-        Self::Universal,
-    ];
     pub fn style_delivery(self) -> StyleDelivery {
         match self {
             Self::Koreader | Self::Goldendict => StyleDelivery {

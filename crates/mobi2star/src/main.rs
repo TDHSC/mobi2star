@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
-use clap::{Parser, Subcommand, ValueEnum};
-use lexicon_core::{read_bounded, Error, Limits, Result};
+use clap::{Parser, Subcommand};
+use lexicon_core::{read_bounded, Error, LabelLanguage, Limits, Result, TargetReader};
+use mobi2star::{Backend, OutputOptions};
 use std::{
     io::{self, Write},
     path::PathBuf,
@@ -30,63 +31,6 @@ struct Cli {
     #[command(subcommand)]
     command: Command,
 }
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum BackendArg {
-    Auto,
-    Srcs,
-    Compiled,
-}
-impl From<BackendArg> for mobi2star::Backend {
-    fn from(arg: BackendArg) -> Self {
-        match arg {
-            BackendArg::Auto => Self::Auto,
-            BackendArg::Srcs => Self::Srcs,
-            BackendArg::Compiled => Self::Compiled,
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum LabelsArg {
-    En,
-    Zh,
-}
-/// Reader the StarDict dictionary is built for. It decides how entries
-/// reference dictionary.css; see docs/READERS.md.
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum ReaderArg {
-    /// KOReader (also fine for GoldenDict desktop): dictionary.css plus a linked res/ copy
-    Koreader,
-    /// GoldenDict / GoldenDict-ng desktop, SilverDict: same output as koreader
-    Goldendict,
-    /// GoldenDict Mobile (Android): a stylesheet copy inside every entry
-    GoldendictMobile,
-    /// Readest: a stylesheet copy inside every entry
-    Readest,
-    /// Converting to Kobo with PyGlossary or penelope: a copy inside every entry
-    Kobo,
-    /// Several or untested readers (e.g. Boox): link and inline copy, largest output
-    Universal,
-}
-impl From<ReaderArg> for lexicon_core::TargetReader {
-    fn from(arg: ReaderArg) -> Self {
-        match arg {
-            ReaderArg::Koreader => Self::Koreader,
-            ReaderArg::Goldendict => Self::Goldendict,
-            ReaderArg::GoldendictMobile => Self::GoldendictMobile,
-            ReaderArg::Readest => Self::Readest,
-            ReaderArg::Kobo => Self::Kobo,
-            ReaderArg::Universal => Self::Universal,
-        }
-    }
-}
-impl From<LabelsArg> for lexicon_core::LabelLanguage {
-    fn from(arg: LabelsArg) -> Self {
-        match arg {
-            LabelsArg::En => Self::En,
-            LabelsArg::Zh => Self::Zh,
-        }
-    }
-}
 #[derive(Subcommand)]
 enum Command {
     /// Read the container/header only. Passing preflight is NOT a conversion guarantee.
@@ -96,19 +40,19 @@ enum Command {
         input: PathBuf,
         #[arg(short, long)]
         output: PathBuf,
-        #[arg(long, value_enum, default_value_t = BackendArg::Auto)]
-        backend: BackendArg,
+        #[arg(long, value_enum, default_value_t = Backend::default())]
+        backend: Backend,
         #[arg(
             long,
-            default_value_t = 32,
+            default_value_t = OutputOptions::default().offset_bits,
             help = "32 (portable default) or 64 (reader support required)"
         )]
         offset_bits: u8,
-        #[arg(long, value_enum, default_value_t = LabelsArg::En, help = "Language of generated chapter/supplement/gallery keys and offline viewer text")]
-        labels: LabelsArg,
+        #[arg(long, value_enum, default_value_t = OutputOptions::default().labels, help = "Language of generated chapter/supplement/gallery keys and offline viewer text")]
+        labels: LabelLanguage,
         /// Reader to build for; decides how entries reference dictionary.css
-        #[arg(long, value_enum, default_value_t = ReaderArg::Koreader)]
-        reader: ReaderArg,
+        #[arg(long, value_enum, default_value_t = OutputOptions::default().reader)]
+        reader: TargetReader,
     },
     /// Verify source identity, coverage, actual StarDict records, links, resources and provenance.
     Verify {
@@ -177,18 +121,13 @@ fn run(cli: &Cli) -> Result<()> {
             labels,
             reader,
         } => {
-            let options = mobi2star::OutputOptions {
+            let options = OutputOptions {
                 offset_bits: *offset_bits,
-                labels: (*labels).into(),
-                reader: (*reader).into(),
+                labels: *labels,
+                reader: *reader,
             };
-            let (bundle, report) = mobi2star::convert_with_backend(
-                input,
-                output,
-                &limits,
-                options,
-                (*backend).into(),
-            )?;
+            let (bundle, report) =
+                mobi2star::convert_with_backend(input, output, &limits, options, *backend)?;
             if cli.json {
                 stdout_json(&serde_json::json!({"bundle": bundle, "report": report}))?;
             } else {

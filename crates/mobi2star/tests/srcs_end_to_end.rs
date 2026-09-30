@@ -228,7 +228,7 @@ fn each_reader_gets_its_stylesheet_delivery() {
     let source = write_source(dir.path(), PAGE);
     let limits = Limits::default();
     let mut unaffected = None;
-    for reader in TargetReader::ALL {
+    for &reader in TargetReader::ALL {
         let delivery = reader.style_delivery();
         let options = OutputOptions {
             reader,

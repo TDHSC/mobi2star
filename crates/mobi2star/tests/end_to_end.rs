@@ -130,7 +130,7 @@ fn each_reader_gets_its_stylesheet_delivery() {
     // The source <style> body, scoped under the book's wrapper class.
     let class = html_preserve::css::scope_class(&sha256(PLAIN));
     let css = format!(".{class} .definition{{font-weight:normal}}\n");
-    for reader in TargetReader::ALL {
+    for &reader in TargetReader::ALL {
         let delivery = reader.style_delivery();
         let dir = tempfile::tempdir().unwrap();
         let (source, bundle) = converted(dir.path(), reader);

@@ -6,10 +6,13 @@ use serde::{Deserialize, Serialize};
 /// Language of generated labels. The labels are part of the output that
 /// verification regenerates byte for byte, so bundles record their choice.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "lowercase")]
 pub enum LabelLanguage {
+    /// English
     #[default]
     En,
+    /// Chinese (Simplified)
     Zh,
 }
 

@@ -47,7 +47,7 @@ The `compiled` writer is now a thin adapter to these same primitives. The standa
 
 Readers load a dictionary stylesheet in different ways (see [READERS.md](READERS.md)). One concept lives in each layer:
 
-- `lexicon_core::TargetReader` names the reader, and `style_delivery()` maps it to a `StyleDelivery { link, inline }`. `STYLESHEET_FILE` and `LINK_TAG` are the shared names.
+- `lexicon_core::TargetReader` names the reader, and `style_delivery()` maps it to a `StyleDelivery { link, inline }`. `STYLESHEET_FILE` and `LINK_TAG` are the shared names. The enum and its `ALL` list come from one macro list. With lexicon-core's optional `clap` feature, `TargetReader` and `LabelLanguage` are the CLI's value enums as well, and the CLI takes its defaults from `OutputOptions::default()`, so command line, library and manifests share one set of names and defaults.
 - `StyleDelivery::references()` writes a payload's link and/or inline copy for both backends.
 - Each renderer produces one dictionary-wide stylesheet and the per-payload references:
   - `srcs_render::Plan` groups pages by their ordered stylesheet list. Each `StyleSet` is scoped under its own wrapper class, so every set can share one file without changing any page's cascade. `Plan::stylesheet()` joins the sets; `Plan::style_prefix()` gives a payload the references for its set.
