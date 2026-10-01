@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" width="96" height="96" alt="">
+  <img src="web/icon.svg" width="96" height="96" alt="">
 </p>
 
 <h1 align="center">mobi2star</h1>

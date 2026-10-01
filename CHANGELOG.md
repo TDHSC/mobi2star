@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Every release now attaches its browser page as `mobi2star-vX.Y.Z-web.tar.gz`: `index.html` and `v/X.Y.Z/` with `files.txt`, the files GitHub Pages serves for that version. Pages keeps only the two newest releases; the archive keeps every version downloadable, with its checksum in `SHA256SUMS` and a build-provenance attestation. The release now waits for the page to build, so a release whose page fails is not published.
+- The browser page has a new icon, the same as the README's logo.
 
 ## 0.6.0-alpha.2 — Browser page deployment
 
