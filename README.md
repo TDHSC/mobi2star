@@ -20,6 +20,10 @@
   <a href="docs/READERS.md">Supported readers</a>
 </p>
 
+<p align="center">
+  <img src="docs/assets/hero.webp" width="800" alt="Illustration: mobi2star turns dictionary.mobi into a StarDict folder. On an e-reader, KOReader looks up the word ran and shows the dictionary entries for run, the verb and the noun as separate homographs, with a working link to manage.">
+</p>
+
 Every headword, homograph, inflection, link and image comes through. Anything mobi2star cannot convert stops the conversion with an error instead of silently disappearing. The web app runs entirely in your browser tab, so your dictionary is never uploaded.
 
 **Alpha:** output layout, report fields and library APIs may still change. Not supported yet: DRM-protected and KF8/hybrid files ([all limits](#what-it-cannot-convert-yet)).
@@ -155,7 +159,7 @@ Bug reports and patches are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Dictionary content and trademarks
 
-This repository contains only project code and original synthetic test fixtures. It does not include or distribute any dictionary content. Convert only dictionaries you are entitled to use. A full bundle contains a copy of its input file, so treat it as private and do not redistribute it.
+This repository contains only project code, original synthetic test fixtures and original illustrations. It does not include or distribute any dictionary content. Convert only dictionaries you are entitled to use. A full bundle contains a copy of its input file, so treat it as private and do not redistribute it.
 
 Collins COBUILD is a trademark of HarperCollins Publishers. This project is not affiliated with or endorsed by HarperCollins, Amazon or the StarDict and KOReader projects.
 

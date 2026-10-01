@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mobi2star hero</title>
+<!--
+  Source of docs/assets/hero.webp and docs/assets/social-preview.png. It is an
+  illustration: the dictionary entries and the page text were written for it.
+  Render from the repository root with headless Chrome, then convert the hero
+  to WebP (cwebp is in libwebp), which is a sixth of the PNG's size:
+
+  chrome --headless=new --hide-scrollbars --default-background-color=00000000 \
+    --force-device-scale-factor=2 --window-size=1200,600 --virtual-time-budget=5000 \
+    --screenshot="$TMPDIR/hero.png" "file://$PWD/docs/assets/hero.html"
+  cwebp -q 90 -m 6 "$TMPDIR/hero.png" -o docs/assets/hero.webp
+  chrome --headless=new --hide-scrollbars --window-size=1280,640 --virtual-time-budget=5000 \
+    --screenshot=docs/assets/social-preview.png "file://$PWD/docs/assets/hero.html#social"
+
+  The social preview is uploaded by hand in the repository's Settings.
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,700;1,400;1,700&family=Noto+Sans+Mono&family=Noto+Serif:ital,wght@0,400;1,400&display=block">
+<style>
+
+  :root {
+    --ink: #1c2430;
+    --muted: #5b6878;
+    --brand: #2f5d8a;
+    --brand-soft: #dce7f2;
+    --paper: #f3f1ec;
+    --line: #c9d3de;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: transparent; }
+  body { font-family: "Noto Sans", sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+
+  .stage {
+    width: 1200px; height: 600px; position: relative; overflow: hidden;
+    border-radius: 28px;
+    background: linear-gradient(135deg, #e9f0f7 0%, #f6f8fb 55%, #eef3f8 100%);
+    border: 1px solid #d5dee8;
+    display: flex; align-items: center; gap: 56px; padding: 0 64px 0 64px;
+  }
+  body.social .stage { width: 1280px; height: 640px; border-radius: 0; border: 0; padding: 0 72px; gap: 64px; }
+
+  /* Left column ---------------------------------------------------------- */
+  .story { flex: 1; display: flex; flex-direction: column; gap: 34px; }
+  .brand { display: none; align-items: center; gap: 22px; }
+  .brand img { width: 84px; height: 84px; }
+  .brand h1 { font-size: 64px; line-height: 1; letter-spacing: -1px; }
+  .tagline { display: none; font-size: 27px; line-height: 1.35; color: var(--ink); max-width: 560px; }
+  body.social .brand, body.social .tagline { display: flex; }
+  body.social .tagline { display: block; }
+  body.social .features, body.social .mk { display: none; }
+
+  .flow { display: flex; align-items: center; gap: 14px; }
+  .chip {
+    display: flex; align-items: center; gap: 10px;
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px 16px; box-shadow: 0 1px 2px rgba(28, 36, 48, .06);
+    font-family: "Noto Sans Mono", monospace; font-size: 17px; white-space: nowrap;
+  }
+  .chip small { font-family: "Noto Sans", sans-serif; font-size: 12px; color: var(--muted); display: block; margin-top: 1px; }
+  .chip .ico { width: 30px; height: 36px; flex: none; }
+  .arrow { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; min-width: 92px; }
+  .arrow .pill {
+    display: flex; align-items: center; gap: 7px; background: var(--brand); color: #fff;
+    border-radius: 999px; padding: 6px 12px 6px 7px; font-weight: 700; font-size: 15px;
+  }
+  .arrow .pill img { width: 22px; height: 22px; border-radius: 5px; }
+  .arrow svg { width: 100%; height: 14px; }
+  .arrow small { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+
+  .features { list-style: none; display: flex; flex-direction: column; gap: 18px; }
+  .features li { display: flex; gap: 16px; align-items: flex-start; }
+  .num {
+    flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--brand); color: #fff;
+    font-weight: 700; font-size: 16px; display: grid; place-items: center; margin-top: 2px;
+  }
+  .features b { display: block; font-size: 20px; }
+  .features span { display: block; font-size: 16px; color: var(--muted); margin-top: 1px; }
+  .features code { font-family: "Noto Sans Mono", monospace; font-size: 15px; background: var(--brand-soft); color: var(--brand); padding: 1px 6px; border-radius: 6px; }
+
+  .private { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--muted); }
+  .private svg { width: 18px; height: 18px; flex: none; }
+
+  /* E-reader ------------------------------------------------------------- */
+  .device {
+    flex: none; width: 400px; height: 548px; border-radius: 34px; position: relative;
+    background: linear-gradient(160deg, #30353c, #1d2126);
+    box-shadow: 0 24px 48px rgba(28, 36, 48, .22), inset 0 0 0 1px rgba(255, 255, 255, .06);
+    padding: 26px 22px 46px;
+  }
+  body.social .device { width: 420px; height: 576px; }
+  .device::after {
+    content: ""; position: absolute; left: 50%; bottom: 17px; width: 46px; height: 5px; margin-left: -23px;
+    border-radius: 3px; background: rgba(255, 255, 255, .12);
+  }
+  .screen {
+    width: 100%; height: 100%; background: var(--paper); border-radius: 6px; position: relative; overflow: hidden;
+    font-family: "Noto Serif", serif; color: #222;
+  }
+  .page { padding: 22px 22px 0; font-size: 14.5px; line-height: 1.62; text-align: justify; hyphens: auto; }
+  .page p { text-indent: 1.4em; }
+  .page p:first-child { text-indent: 0; }
+  .sel { background: #b9b9b9; border-radius: 2px; padding: 0 1px; }
+  .status {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 24px; padding: 0 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: "Noto Sans", sans-serif; font-size: 10.5px; color: #555;
+  }
+
+  .popup {
+    position: absolute; left: 12px; right: 12px; bottom: 30px;
+    background: #fff; border: 1.5px solid #222; border-radius: 8px; overflow: hidden;
+    font-family: "Noto Sans", sans-serif; color: #111;
+  }
+  .popup .title {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 12px; border-bottom: 1px solid #222; font-size: 12px; font-weight: 700;
+  }
+  .popup .title span:last-child { font-weight: 400; font-size: 14px; }
+  .popup .word { padding: 8px 14px 6px; font-size: 21px; font-weight: 700; border-bottom: 1px solid #ddd; }
+  .popup .body { padding: 8px 14px 6px; font-size: 13px; line-height: 1.45; }
+  .popup .hw { font-weight: 700; font-size: 15px; }
+  .popup .hw sup { font-size: 9.5px; }
+  .popup .gram { font-size: 11px; letter-spacing: .3px; }
+  .popup .forms { color: #333; }
+  .popup .sense { margin: 3px 0 0 0; display: flex; gap: 6px; }
+  .popup .sense b { flex: none; }
+  .popup .ex { font-style: italic; color: #333; margin: 1px 0 0 14px; }
+  .popup .link { text-decoration: underline; font-weight: 700; }
+  .popup .entry + .entry { margin-top: 7px; }
+  .popup .query { margin-top: 7px; padding-top: 5px; border-top: 1px solid #222; width: 44px; white-space: nowrap; font-size: 12px; }
+  .popup .buttons { display: grid; grid-template-columns: 1fr 1.3fr 1.3fr 1fr; border-top: 1px solid #222; }
+  .popup .buttons div { text-align: center; padding: 7px 0; font-size: 12.5px; }
+  .popup .buttons div + div { border-left: 1px solid #ccc; }
+
+  .mk {
+    display: inline-grid; vertical-align: 1px; margin-left: 5px; width: 17px; height: 17px; border-radius: 50%; background: var(--brand); color: #fff;
+    font-family: "Noto Sans", sans-serif; font-weight: 700; font-size: 10.5px; font-style: normal; place-items: center;
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="story">
+    <div class="brand"><img src="../../web/icon.svg" alt=""><h1>mobi2star</h1></div>
+    <p class="tagline">Convert MOBI dictionaries to StarDict for KOReader and other e-readers, in your browser or on the command line.</p>
+
+    <div class="flow">
+      <div class="chip">
+        <svg class="ico" viewBox="0 0 30 36"><path d="M3 2h16l8 8v24H3z" fill="#fff" stroke="#8a97a6" stroke-width="2" stroke-linejoin="round"/><path d="M19 2v8h8" fill="none" stroke="#8a97a6" stroke-width="2" stroke-linejoin="round"/><rect x="5" y="20" width="20" height="9" rx="2" fill="#c26b2b"/><text x="15" y="27" font-family="Noto Sans" font-weight="700" font-size="7" fill="#fff" text-anchor="middle">MOBI</text></svg>
+        <div>dictionary.mobi<small>Kindle dictionary</small></div>
+      </div>
+      <div class="arrow">
+        <div class="pill"><img src="../../web/icon.svg" alt="">mobi2star</div>
+        <svg viewBox="0 0 100 14" preserveAspectRatio="none"><path d="M2 7h92" stroke="#2f5d8a" stroke-width="2.4" vector-effect="non-scaling-stroke"/><path d="M90 2l8 5-8 5" fill="none" stroke="#2f5d8a" stroke-width="2.4" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>
+        <small>browser or CLI</small>
+      </div>
+      <div class="chip">
+        <svg class="ico" viewBox="0 0 30 36"><path d="M2 9h10l3 3h13v19H2z" fill="#dce7f2" stroke="#2f5d8a" stroke-width="2" stroke-linejoin="round"/><path d="M2 14h26" stroke="#2f5d8a" stroke-width="2"/></svg>
+        <div>StarDict/<small>.ifo .idx .dict .syn res/</small></div>
+      </div>
+    </div>
+
+    <ul class="features">
+      <li><div class="num">1</div><div><b>Inflected forms find their headword</b><span>Long-press <code>ran</code> and get the entry for <code>run</code>.</span></div></li>
+      <li><div class="num">2</div><div><b>Homographs stay separate</b><span><code>run¹</code> the verb and <code>run²</code> the noun keep their own entries.</span></div></li>
+      <li><div class="num">3</div><div><b>Links open the right entry</b><span>Cross-references like <code>manage</code> work in KOReader.</span></div></li>
+    </ul>
+
+    <div class="private">
+      <svg viewBox="0 0 18 18"><rect x="3" y="8" width="12" height="9" rx="2" fill="#5b6878"/><path d="M5.5 8V6a3.5 3.5 0 0 1 7 0v2" fill="none" stroke="#5b6878" stroke-width="1.8"/></svg>
+      Runs in your browser tab. Your dictionary is never uploaded.
+    </div>
+  </div>
+
+  <div class="device">
+    <div class="screen">
+      <div class="page">
+        <p>The rain had not let up since noon. Mara lit the lamp and opened the old atlas her grandfather had left her.</p>
+        <p>She <span class="sel">ran</span> her finger along the faded ink and tried to read what was left of it, letter by letter, the way he had taught her to read the names of rivers.</p>
+        <p>Outside, a cart rattled past and was gone.</p>
+      </div>
+
+      <div class="popup">
+        <div class="title"><span>Sample English Dictionary</span><span>✕</span></div>
+        <div class="word">run</div>
+        <div class="body">
+          <div class="entry">
+            <span class="hw">run<sup>1</sup></span><span class="mk">2</span> /rʌn/ <span class="gram">VERB</span> <span class="forms">runs, running, <b>ran</b>, run</span>
+            <div class="sense"><b>1</b><span>To move on foot faster than walking.</span></div>
+            <div class="ex">She ran the last mile in the rain.</div>
+            <div class="sense"><b>2</b><span>To be in charge of something. → <span class="link">manage</span><span class="mk">3</span></span></div>
+          </div>
+          <div class="entry">
+            <span class="hw">run<sup>2</sup></span><span class="mk">2</span> /rʌn/ <span class="gram">NOUN</span>
+            <div class="sense"><b>1</b><span>A spell of running. <i>an early-morning run</i></span></div>
+          </div>
+          <div class="query"></div>
+          <div style="font-size:12px">(query : ran)<span class="mk">1</span></div>
+        </div>
+        <div class="buttons"><div>◁</div><div>Highlight</div><div>Search</div><div>▷</div></div>
+      </div>
+
+      <div class="status"><span>Chapter 3</span><span>37 / 214</span></div>
+    </div>
+  </div>
+</div>
+<script>
+  if (location.hash === "#social") document.body.classList.add("social");
+</script>
+</body>
+</html>
